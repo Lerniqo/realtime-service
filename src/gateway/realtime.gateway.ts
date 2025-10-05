@@ -47,7 +47,10 @@ export class RealtimeGateway
         email: payload.email,
       };
 
-      this.connectionService.addConnections(client);
+      // Add connection tracking if service exists
+      if (this.connectionService) {
+        this.connectionService.addConnections(client);
+      }
 
       this.logger.log({
         message: 'Client authenticated and connected',
