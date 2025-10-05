@@ -6,6 +6,7 @@ import {
 import { Socket } from 'socket.io';
 import { Logger, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConnectionService } from './connection.service';
 
 @Injectable()
 @WebSocketGateway({
@@ -18,7 +19,10 @@ export class RealtimeGateway
 {
   private readonly logger: Logger = new Logger(RealtimeGateway.name);
 
-  constructor(private jwtService: JwtService) {}
+  constructor(
+    private jwtService: JwtService,
+    private connectionService: ConnectionService,
+  ) {}
 
   handleConnection(client: Socket) {
     try {
@@ -43,11 +47,16 @@ export class RealtimeGateway
         email: payload.email,
       };
 
+      this.connectionService.addConnections(client);
+
       this.logger.log({
         message: 'Client authenticated and connected',
         service_name: 'realtime-service',
         client_id: client.id,
         user_id: client.data.user.userId,
+        total_user_connections: this.connectionService.getUserConnections(
+          client.data.user.userId,
+        ).length,
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -60,6 +69,7 @@ export class RealtimeGateway
   }
 
   handleDisconnect(client: Socket) {
+    this.connectionService.removeConnection(client);
     const userId = client.data.user?.userId || 'unknown';
     this.logger.log({
       message: 'Client disconnected',
