@@ -24,7 +24,7 @@ export class RealtimeGateway
     private connectionService: ConnectionService,
   ) {}
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     try {
       const token =
         client.handshake.auth?.token ||
@@ -34,7 +34,8 @@ export class RealtimeGateway
         this.logger.warn(
           `Connection rejected: No token provided - ${client.id}`,
         );
-        client.disconnect(true);
+        // Immediately disconnect the client
+        setImmediate(() => client.disconnect(true));
         return;
       }
 
@@ -66,8 +67,8 @@ export class RealtimeGateway
       this.logger.error(
         `Authentication failed for ${client.id}: ${error.message}`,
       );
-      client.emit('connect_error', { message: 'Authentication failed' });
-      client.disconnect(true);
+      // Disconnect the client immediately using setImmediate to avoid framework issues
+      setImmediate(() => client.disconnect(true));
     }
   }
 

@@ -34,8 +34,11 @@ describe('RedisService', () => {
     expect(service).toBeDefined();
   });
 
-  it('should return Redis client', () => {
+  it('should return Redis client', async () => {
+    await service.onModuleInit();
     const client = service.getClient();
     expect(client).toBeDefined();
+    // Clean up the connection to avoid test warnings
+    await service.onModuleDestroy();
   });
 });

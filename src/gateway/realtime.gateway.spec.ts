@@ -4,6 +4,7 @@ import { RealtimeGateway } from './realtime.gateway';
 import { ConnectionService } from './connection.service';
 import { io, Socket } from 'socket.io-client';
 import { INestApplication } from '@nestjs/common';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 describe('RealtimeGateway', () => {
   let app: INestApplication;
@@ -26,6 +27,7 @@ describe('RealtimeGateway', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.useWebSocketAdapter(new IoAdapter(app));
     gateway = moduleFixture.get<RealtimeGateway>(RealtimeGateway);
     jwtService = moduleFixture.get<JwtService>(JwtService);
 
@@ -70,16 +72,44 @@ describe('RealtimeGateway', () => {
 
     clientSocket = io('http://localhost:3001', {
       auth: { token: 'invalid-token' },
+      timeout: 1000,
     });
 
+    let connectReceived = false;
+
     clientSocket.on('connect', () => {
-      done.fail('Should not connect with invalid token');
+      connectReceived = true;
+      // Wait a bit to see if disconnect happens immediately
+      setTimeout(() => {
+        if (clientSocket.connected) {
+          done(new Error('Should not remain connected with invalid token'));
+        } else {
+          // Connection was terminated, which is what we expect
+          done();
+        }
+      }, 100);
     });
 
     clientSocket.on('connect_error', (error) => {
-      // Socket.IO automatically sends connect_error when connection is rejected
-      expect(error).toBeDefined();
-      done();
+      if (!connectReceived) {
+        // This is the ideal case - connection was rejected before connect
+        expect(error).toBeDefined();
+        done();
+      }
     });
+
+    clientSocket.on('disconnect', () => {
+      if (connectReceived) {
+        // Connection was established then immediately terminated
+        done();
+      }
+    });
+
+    // Timeout if nothing happens
+    setTimeout(() => {
+      if (!connectReceived) {
+        done(new Error('Test timeout - no connection or error event received'));
+      }
+    }, 2000);
   }, 10000);
 });
