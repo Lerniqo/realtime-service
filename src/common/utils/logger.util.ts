@@ -6,7 +6,7 @@ export class LoggerUtil {
     action: string,
     details?: any,
   ): string {
-    const baseMessage = `[${context}] ${action}`;
+    const baseMessage = `[${context}] ${action} | service: realtime-service`;
     if (details && typeof details === 'object') {
       const detailsStr = JSON.stringify(details, null, 0);
       return `${baseMessage} | ${detailsStr}`;
