@@ -9,7 +9,10 @@ import { LoggerUtil } from 'src/common/utils/logger.util';
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis;
 
-  constructor(private configService: ConfigService , private readonly logger: PinoLogger) {}
+  constructor(
+    private configService: ConfigService,
+    private readonly logger: PinoLogger,
+  ) {}
 
   async onModuleInit() {
     this.client = new Redis({
@@ -27,7 +30,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('error', (err) => {
-      // LoggerUtil.logError(this.logger, 'RedisService', 'Redis client error', err);
+      LoggerUtil.logError(
+        this.logger,
+        'RedisService',
+        'Redis client error',
+        err,
+      );
     });
   }
 
