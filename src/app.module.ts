@@ -6,6 +6,7 @@ import { RedisService } from './redis/redis.service';
 import { AuthJwtModule } from './auth/jwt.module';
 import { RealtimeGateway } from './gateway/realtime.gateway';
 import { GatewayModule } from './gateway/gateway.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { GatewayModule } from './gateway/gateway.module';
     }),
     AuthJwtModule,
     GatewayModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService, RedisService],
