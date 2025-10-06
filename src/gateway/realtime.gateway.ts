@@ -6,10 +6,9 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConnectionService } from './connection.service';
-import { CustomLoggerService } from '../logger/custom-logger/custom-logger.service';
 import { LoggerUtil } from 'src/common/utils/logger.util';
 import { PinoLogger } from 'nestjs-pino';
 
@@ -30,7 +29,6 @@ export class RealtimeGateway
   constructor(
     private jwtService: JwtService,
     private connectionService: ConnectionService,
-    private readonly customLogger: CustomLoggerService,
     private readonly logger: PinoLogger,
   ) {}
 

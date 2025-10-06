@@ -44,6 +44,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   getClient(): Redis {
+    // Below logger is not completed
+    LoggerUtil.logInfo(this.logger, 'RedisService', 'Returning Redis client', {
+      client_id: this.client,
+    });
     return this.client;
   }
 }

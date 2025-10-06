@@ -4,12 +4,9 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { RedisService } from './redis/redis.service';
 import { AuthJwtModule } from './auth/jwt.module';
-// import { RealtimeGateway } from './gateway/realtime.gateway';
 import { GatewayModule } from './gateway/gateway.module';
 import { HealthModule } from './health/health.module';
 import { LoggerModule } from 'nestjs-pino';
-// import { CustomLoggerService } from './logger/custom-logger/custom-logger.service';
-import { CustomLoggerModule } from './logger/custom-logger/custom-logger.module';
 
 @Module({
   imports: [
@@ -43,7 +40,6 @@ import { CustomLoggerModule } from './logger/custom-logger/custom-logger.module'
     AuthJwtModule,
     GatewayModule,
     HealthModule,
-    CustomLoggerModule,
   ],
   controllers: [AppController],
   providers: [AppService, RedisService],
