@@ -1,12 +1,15 @@
 import {
   WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Socket } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { Logger, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConnectionService } from './connection.service';
+import { CustomLoggerService } from '../logger/custom-logger/custom-logger.service';
 
 @Injectable()
 @WebSocketGateway({
@@ -19,9 +22,13 @@ export class RealtimeGateway
 {
   private readonly logger: Logger = new Logger(RealtimeGateway.name);
 
+  @WebSocketServer()
+  server: Server;
+
   constructor(
     private jwtService: JwtService,
     private connectionService: ConnectionService,
+    private readonly customLogger: CustomLoggerService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -53,16 +60,19 @@ export class RealtimeGateway
         this.connectionService.addConnections(client);
       }
 
-      this.logger.log({
-        message: 'Client authenticated and connected',
-        service_name: 'realtime-service',
-        client_id: client.id,
-        user_id: client.data.user.userId,
-        total_user_connections: this.connectionService.getUserConnections(
-          client.data.user.userId,
-        ).length,
-        timestamp: new Date().toISOString(),
-      });
+      // this.logger.log({
+      //   message: 'Client authenticated and connected',
+      //   service_name: 'realtime-service',
+      //   client_id: client.id,
+      //   user_id: client.data.user.userId,
+      //   total_user_connections: this.connectionService.getUserConnections(
+      //     client.data.user.userId,
+      //   ).length,
+      //   timestamp: new Date().toISOString(),
+      // });
+
+      const userId = client.handshake.auth?.userId || 'anonymous';
+      this.customLogger.logWebSocketConnection(userId, client.id);
     } catch (error) {
       this.logger.error(
         `Authentication failed for ${client.id}: ${error.message}`,
@@ -74,13 +84,27 @@ export class RealtimeGateway
 
   handleDisconnect(client: Socket) {
     this.connectionService.removeConnection(client);
-    const userId = client.data.user?.userId || 'unknown';
-    this.logger.log({
-      message: 'Client disconnected',
-      service_name: 'realtime-service',
-      client_id: client.id,
-      user_id: userId,
-      timestamp: new Date().toISOString(),
-    });
+    const userId =
+      client.data.user?.userId || client.handshake.auth?.userId || 'unknown';
+    // this.logger.log({
+    //   message: 'Client disconnected',
+    //   service_name: 'realtime-service',
+    //   client_id: client.id,
+    //   user_id: userId,
+    //   timestamp: new Date().toISOString(),
+    // });
+
+    this.customLogger.logWebSocketDisconnection(
+      userId,
+      client.id,
+      'client_disconnect',
+    );
+  }
+
+  @SubscribeMessage('message')
+  handleMessage(client: Socket, payload: any) {
+    const userId = client.handshake.auth?.userId || 'anonymous';
+    this.customLogger.logWebSocketEvent('message', userId, client.id, payload);
+    // Your message handling logic here
   }
 }
