@@ -1,12 +1,15 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { Logger } from 'nestjs-pino';
+import { PinoLogger } from 'nestjs-pino/PinoLogger';
+import { LoggerUtil } from 'src/common/utils/logger.util';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis;
 
-  constructor(private configService: ConfigService) {}
+  constructor(private configService: ConfigService , private readonly logger: PinoLogger) {}
 
   async onModuleInit() {
     this.client = new Redis({
@@ -20,11 +23,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('connect', () => {
-      console.log('Redis client connected');
+      LoggerUtil.logInfo(this.logger, 'RedisService', 'Connected to Redis');
     });
 
     this.client.on('error', (err) => {
-      console.error('Redis client error: ', err);
+      // LoggerUtil.logError(this.logger, 'RedisService', 'Redis client error', err);
     });
   }
 
