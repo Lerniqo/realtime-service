@@ -1,12 +1,16 @@
 import {
   WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Socket } from 'socket.io';
-import { Logger, Injectable } from '@nestjs/common';
+import { Server, Socket } from 'socket.io';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConnectionService } from './connection.service';
+import { LoggerUtil } from 'src/common/utils/logger.util';
+import { PinoLogger } from 'nestjs-pino';
 
 @Injectable()
 @WebSocketGateway({
@@ -17,11 +21,15 @@ import { ConnectionService } from './connection.service';
 export class RealtimeGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
-  private readonly logger: Logger = new Logger(RealtimeGateway.name);
+  // private readonly logger: Logger = new Logger(RealtimeGateway.name);
+
+  @WebSocketServer()
+  server: Server;
 
   constructor(
     private jwtService: JwtService,
     private connectionService: ConnectionService,
+    private readonly logger: PinoLogger,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -31,8 +39,10 @@ export class RealtimeGateway
         client.handshake.headers?.authorization?.replace('Bearer ', '');
 
       if (!token) {
-        this.logger.warn(
-          `Connection rejected: No token provided - ${client.id}`,
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          `Connection rejected: No token provided - client id ${client.id}`,
         );
         // Immediately disconnect the client
         setImmediate(() => client.disconnect(true));
@@ -53,19 +63,26 @@ export class RealtimeGateway
         this.connectionService.addConnections(client);
       }
 
-      this.logger.log({
-        message: 'Client authenticated and connected',
-        service_name: 'realtime-service',
-        client_id: client.id,
-        user_id: client.data.user.userId,
-        total_user_connections: this.connectionService.getUserConnections(
-          client.data.user.userId,
-        ).length,
-        timestamp: new Date().toISOString(),
-      });
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        'Client authenticated and connected',
+        {
+          client_id: client.id,
+          user_id: client.data.user.userId,
+          total_user_connections: this.connectionService.getUserConnections(
+            client.data.user.userId,
+          ).length,
+        },
+      );
+
+      const userId = client.handshake.auth?.userId || 'anonymous';
     } catch (error) {
-      this.logger.error(
-        `Authentication failed for ${client.id}: ${error.message}`,
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeGateway',
+        `Authentication failed for ${client.id}`,
+        error,
       );
       // Disconnect the client immediately using setImmediate to avoid framework issues
       setImmediate(() => client.disconnect(true));
@@ -74,13 +91,30 @@ export class RealtimeGateway
 
   handleDisconnect(client: Socket) {
     this.connectionService.removeConnection(client);
-    const userId = client.data.user?.userId || 'unknown';
-    this.logger.log({
-      message: 'Client disconnected',
-      service_name: 'realtime-service',
-      client_id: client.id,
-      user_id: userId,
-      timestamp: new Date().toISOString(),
-    });
+    const userId =
+      client.data.user?.userId || client.handshake.auth?.userId || 'unknown';
+
+    LoggerUtil.logInfo(
+      this.logger,
+      'RealtimeGateway',
+      `Client disconnected: ${client.id}`,
+      {
+        client_id: client.id,
+        user_id: userId,
+        total_user_connections:
+          this.connectionService.getUserConnections(userId).length,
+      },
+    );
+  }
+
+  @SubscribeMessage('message')
+  handleMessage(client: Socket, payload: any) {
+    const userId = client.handshake.auth?.userId || 'anonymous';
+    LoggerUtil.logInfo(
+      this.logger,
+      'RealtimeGateway',
+      `Message received from ${userId}: ${JSON.stringify(payload)}`,
+    );
+    // Your message handling logic here
   }
 }
