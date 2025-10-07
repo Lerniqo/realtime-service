@@ -1,19 +1,130 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Socket } from 'socket.io';
+import { RedisService } from 'src/redis/redis.service';
+import { InMemoryRoomStore } from './rooms.store';
+import { PinoLogger } from 'nestjs-pino/PinoLogger';
+import { LoggerUtil } from 'src/common/utils/logger.util';
 
 /**
- * RoomsService
- * Responsibilities (planned next phases):
- *  - Validate and manage socket membership in logical rooms (user:{id}, session:{id}, match:{id}, lobby:global)
- *  - Encapsulate naming conventions & enforce server-controlled private rooms
- *  - Provide helper emissions: emitToUser, emitToRoom (later)
- *  - Delegate raw membership tracking to an injected store (in-memory now; Redis-ready design)
- *
- * Not implemented yet:
- *  - Actual join/leave methods (next phase)
- *  - Server reference setter/injection for emission helpers
- *  - Authorization checks for domain-specific rooms
+ * RealtimeRoomsService
+ *  - Redis-backed room membership (horizontal scaling)
+ *  - Fallback in-memory mirror (optional, can be removed)
+ *  - Private user room pattern: user:{userId}
  */
 @Injectable()
-export class RoomsService {
-  // Store & server references will be added in Phase 2/3
+export class RealtimeRoomsService {
+  // private readonly logger = new Logger(RealtimeRoomsService.name);
+  private readonly memory = new InMemoryRoomStore(); // optional
+
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly logger: PinoLogger,
+  ) {}
+
+  private redisKeyRoom(room: string) {
+    return `room:${room}`;
+  }
+  private redisKeySocket(socketId: string) {
+    return `socket:${socketId}:rooms`;
+  }
+
+  /**
+   * Auto-join pattern for authenticated user
+   */
+  async ensureUserPrivateRoom(socket: Socket): Promise<void> {
+    const userId = socket.data?.user?.userId;
+    if (!userId) return;
+    await this.joinRoom(socket, `user:${userId}`);
+    LoggerUtil.logInfo(
+      this.logger,
+      'RoomsService',
+      `Socket ${socket.id} joined private room user:${userId}`,
+    );
+  }
+
+  async joinRoom(socket: Socket, roomName: string): Promise<void> {
+    const client = this.redisService.getClient();
+    const socketId = socket.id;
+
+    // 1. Join Socket.IO internal room (works with redis-adapter)
+    socket.join(roomName);
+
+    // 2. Persist in Redis
+    await client
+      .multi()
+      .sadd(this.redisKeyRoom(roomName), socketId)
+      .sadd(this.redisKeySocket(socketId), roomName)
+      .exec();
+
+    // 3. Mirror (optional)
+    this.memory.addSocketToRoom(socketId, roomName);
+
+    LoggerUtil.logInfo(
+      this.logger,
+      'RoomsService',
+      `Socket ${socketId} joined room ${roomName}`,
+    );
+  }
+
+  async leaveRoom(socket: Socket, roomName: string): Promise<void> {
+    const client = this.redisService.getClient();
+    const socketId = socket.id;
+
+    socket.leave(roomName);
+
+    await client
+      .multi()
+      .srem(this.redisKeyRoom(roomName), socketId)
+      .srem(this.redisKeySocket(socketId), roomName)
+      .exec();
+
+    this.memory.removeSocketFromRoom(socketId, roomName);
+    LoggerUtil.logInfo(
+      this.logger,
+      'RoomsService',
+      `Socket ${socketId} left room ${roomName}`,
+    );
+  }
+
+  /**
+   * Remove socket from every room it was in (called on disconnect)
+   */
+  async removeSocketFromAllRooms(socketId: string): Promise<void> {
+    const client = this.redisService.getClient();
+    const roomNames = await client.smembers(this.redisKeySocket(socketId));
+    if (roomNames.length) {
+      const multi = client.multi();
+      for (const r of roomNames) {
+        multi.srem(this.redisKeyRoom(r), socketId);
+      }
+      multi.del(this.redisKeySocket(socketId));
+      await multi.exec();
+    }
+    this.memory.removeSocket(socketId);
+    LoggerUtil.logInfo(
+      this.logger,
+      'RoomsService',
+      `Cleaned up socket ${socketId}`,
+    );
+  }
+
+  /**
+   * Broadcast a message to a room (all instances via adapter)
+   */
+  async emitToRoom(
+    server: import('socket.io').Server,
+    roomName: string,
+    event: string,
+    payload: any,
+  ) {
+    server.to(roomName).emit(event, payload);
+  }
+
+  /**
+   * (Optional) Get members via Redis
+   */
+  async getSocketsInRoom(roomName: string): Promise<string[]> {
+    const client = this.redisService.getClient();
+    return client.smembers(this.redisKeyRoom(roomName));
+  }
 }

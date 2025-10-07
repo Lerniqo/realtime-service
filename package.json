@@ -28,6 +28,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/platform-socket.io": "^11.1.6",
     "@nestjs/websockets": "^11.1.6",
+    "@socket.io/redis-adapter": "^8.3.0",
     "ioredis": "^5.8.0",
     "jsonwebtoken": "^9.0.2",
     "nestjs-pino": "^4.4.1",
