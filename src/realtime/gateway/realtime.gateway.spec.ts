@@ -5,6 +5,7 @@ import { ConnectionService } from './connection.service';
 import { io, Socket } from 'socket.io-client';
 import { INestApplication } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import { PinoLogger } from 'nestjs-pino';
 
 describe('RealtimeGateway', () => {
   let app: INestApplication;
@@ -21,6 +22,16 @@ describe('RealtimeGateway', () => {
           provide: JwtService,
           useValue: {
             verify: jest.fn(),
+          },
+        },
+        {
+          provide: PinoLogger,
+          useValue: {
+            info: jest.fn(),
+            error: jest.fn(),
+            warn: jest.fn(),
+            debug: jest.fn(),
+            setContext: jest.fn(),
           },
         },
       ],

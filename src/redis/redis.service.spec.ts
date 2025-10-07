@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from './redis.service';
+import { PinoLogger } from 'nestjs-pino';
 
 describe('RedisService', () => {
   let service: RedisService;
@@ -22,6 +23,16 @@ describe('RedisService', () => {
                 };
                 return config[key] || defaultValue;
               }),
+          },
+        },
+        {
+          provide: PinoLogger,
+          useValue: {
+            info: jest.fn(),
+            error: jest.fn(),
+            warn: jest.fn(),
+            debug: jest.fn(),
+            setContext: jest.fn(),
           },
         },
       ],

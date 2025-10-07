@@ -4,9 +4,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { RedisService } from './redis/redis.service';
 import { AuthJwtModule } from './auth/jwt.module';
-import { GatewayModule } from './gateway/gateway.module';
+// Replaced GatewayModule with consolidated RealtimeModule
+import { RealtimeModule } from './realtime/realtime.module';
 import { HealthModule } from './health/health.module';
 import { LoggerModule } from 'nestjs-pino';
+// RoomsService is re-exported via RealtimeModule; direct import removed
 
 @Module({
   imports: [
@@ -38,10 +40,11 @@ import { LoggerModule } from 'nestjs-pino';
       },
     }),
     AuthJwtModule,
-    GatewayModule,
+    RealtimeModule,
     HealthModule,
   ],
   controllers: [AppController],
+  // RoomsService now provided by RealtimeModule
   providers: [AppService, RedisService],
 })
 export class AppModule {}

@@ -21,8 +21,6 @@ import { PinoLogger } from 'nestjs-pino';
 export class RealtimeGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
-  // private readonly logger: Logger = new Logger(RealtimeGateway.name);
-
   @WebSocketServer()
   server: Server;
 
