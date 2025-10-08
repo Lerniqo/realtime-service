@@ -8,11 +8,19 @@ import { LoggerUtil } from 'src/common/utils/logger.util';
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis;
+  private readyPromise: Promise<void>;
+  private readyResolve: () => void;
+  private readyReject: (error: any) => void;
 
   constructor(
     private configService: ConfigService,
     private readonly logger: PinoLogger,
-  ) {}
+  ) {
+    this.readyPromise = new Promise((resolve, reject) => {
+      this.readyResolve = resolve;
+      this.readyReject = reject;
+    });
+  }
 
   async onModuleInit() {
     this.client = new Redis({
@@ -23,10 +31,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         const delay = Math.min(times * 50, 2000);
         return delay;
       },
+      maxRetriesPerRequest: 3,
     });
 
-    this.client.on('connect', () => {
-      LoggerUtil.logInfo(this.logger, 'RedisService', 'Connected to Redis');
+    this.client.on('ready', () => {
+      LoggerUtil.logInfo(this.logger, 'RedisService', 'Redis client ready');
+      this.readyResolve(); // ✅ mark ready
     });
 
     this.client.on('error', (err) => {
@@ -36,18 +46,36 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         'Redis client error',
         err,
       );
+      // Don't reject the promise on error, let retry strategy handle it
     });
+
+    this.client.on('connect', () => {
+      LoggerUtil.logInfo(this.logger, 'RedisService', 'Connected to Redis');
+    });
+
+    try {
+      await this.client.ping();
+      LoggerUtil.logInfo(this.logger, 'RedisService', 'Redis ping successful');
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RedisService',
+        'Redis connection failed',
+        error,
+      );
+      // Don't rethrow, let the retry strategy handle it
+    }
+  }
+
+  async waitUntilReady(): Promise<void> {
+    await this.readyPromise;
+  }
+
+  getClient(): Redis {
+    return this.client;
   }
 
   async onModuleDestroy() {
     await this.client.quit();
-  }
-
-  getClient(): Redis {
-    // Below logger is not completed
-    LoggerUtil.logInfo(this.logger, 'RedisService', 'Returning Redis client', {
-      client_id: this.client,
-    });
-    return this.client;
   }
 }
