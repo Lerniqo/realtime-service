@@ -141,7 +141,7 @@ describe('RealtimeGateway', () => {
     await gateway.handleConnection(socketWithoutToken as any);
 
     // Wait for setImmediate to execute
-    await new Promise(resolve => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(socketWithoutToken.disconnect).toHaveBeenCalledWith(true);
   });
@@ -154,7 +154,7 @@ describe('RealtimeGateway', () => {
     await gateway.handleConnection(mockSocket as any);
 
     // Wait for setImmediate to execute
-    await new Promise(resolve => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(mockSocket.disconnect).toHaveBeenCalledWith(true);
   });
@@ -165,7 +165,9 @@ describe('RealtimeGateway', () => {
     gateway.handleDisconnect(mockSocket as any);
 
     expect(connectionService.removeConnection).toHaveBeenCalledWith(mockSocket);
-    expect(roomsService.removeSocketFromAllRooms).toHaveBeenCalledWith('test-socket-id');
+    expect(roomsService.removeSocketFromAllRooms).toHaveBeenCalledWith(
+      'test-socket-id',
+    );
   });
 
   it('should join room on message', async () => {
@@ -177,7 +179,10 @@ describe('RealtimeGateway', () => {
   it('should leave room on message', async () => {
     await gateway.onLeaveRoom(mockSocket as any, 'test-room');
 
-    expect(roomsService.leaveRoom).toHaveBeenCalledWith(mockSocket, 'test-room');
+    expect(roomsService.leaveRoom).toHaveBeenCalledWith(
+      mockSocket,
+      'test-room',
+    );
   });
 
   it('should broadcast to room', async () => {
@@ -210,7 +215,11 @@ describe('RealtimeGateway', () => {
   });
 
   it('should ignore invalid broadcast data', async () => {
-    await gateway.onBroadcast(mockSocket as any, { room: '', event: 'test', payload: null });
+    await gateway.onBroadcast(mockSocket as any, {
+      room: '',
+      event: 'test',
+      payload: null,
+    });
 
     expect(roomsService.emitToRoom).not.toHaveBeenCalled();
   });
