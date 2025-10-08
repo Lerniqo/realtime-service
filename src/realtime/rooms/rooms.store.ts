@@ -68,4 +68,7 @@ export class InMemoryRoomStore implements IRoomStore {
   isSocketInRoom(socketId: string, roomName: string): boolean {
     return this.socketToRooms.get(socketId)?.has(roomName) ?? false;
   }
+  getAllRooms(): string[] {
+    return Array.from(this.roomToSockets.keys());
+  }
 }

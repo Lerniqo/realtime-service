@@ -121,10 +121,101 @@ export class RealtimeRoomsService {
   }
 
   /**
-   * (Optional) Get members via Redis
+   * Get all rooms a socket is currently in
    */
-  async getSocketsInRoom(roomName: string): Promise<string[]> {
-    const client = this.redisService.getClient();
-    return client.smembers(this.redisKeyRoom(roomName));
+  async getSocketRooms(socketId: string): Promise<string[]> {
+    try {
+      const client = this.redisService.getClient();
+      if (client.status === 'ready') {
+        return await client.smembers(this.redisKeySocket(socketId));
+      }
+      return Array.from(this.memory.getRoomsForSocket(socketId));
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeRoomsService',
+        'Failed to get socket rooms',
+        error,
+      );
+      return Array.from(this.memory.getRoomsForSocket(socketId));
+    }
+  }
+
+  /**
+   * Get all sockets in a specific room
+   */
+  async getRoomSockets(roomName: string): Promise<string[]> {
+    try {
+      const client = this.redisService.getClient();
+      if (client.status === 'ready') {
+        return await client.smembers(this.redisKeyRoom(roomName));
+      }
+      return Array.from(this.memory.getSocketsInRoom(roomName));
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeRoomsService',
+        'Failed to get room sockets',
+        error,
+      );
+      return Array.from(this.memory.getSocketsInRoom(roomName));
+    }
+  }
+
+  /**
+   * Get all active rooms
+   */
+  async getAllRooms(): Promise<string[]> {
+    try {
+      const client = this.redisService.getClient();
+      if (client.status === 'ready') {
+        const keys = await client.keys('room:*');
+        return keys.map((key) => key.replace('room:', ''));
+      }
+      return this.memory.getAllRooms();
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeRoomsService',
+        'Failed to get all rooms',
+        error,
+      );
+      return this.memory.getAllRooms();
+    }
+  }
+
+  /**
+   * Check if a user is online (has any active connections)
+   */
+  async isUserOnline(userId: string): Promise<boolean> {
+    const userRoom = `user:${userId}`;
+    const sockets = await this.getRoomSockets(userRoom);
+    return sockets.length > 0;
+  }
+
+  /**
+   * Get count of users in a room
+   */
+  async getRoomUserCount(roomName: string): Promise<number> {
+    const sockets = await this.getRoomSockets(roomName);
+    return sockets.length;
+  }
+
+  /**
+   * Find all rooms for a specific user across all their connections
+   */
+  async getUserRooms(userId: string): Promise<string[]> {
+    // Get all sockets for this user from their private room
+    const userRoom = `user:${userId}`;
+    const userSockets = await this.getRoomSockets(userRoom);
+
+    // Get all rooms for all user's sockets
+    const allRooms = new Set<string>();
+    for (const socketId of userSockets) {
+      const socketRooms = await this.getSocketRooms(socketId);
+      socketRooms.forEach((room) => allRooms.add(room));
+    }
+
+    return Array.from(allRooms);
   }
 }

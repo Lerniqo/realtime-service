@@ -2,26 +2,44 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { RealtimeGateway } from './realtime.gateway';
 import { ConnectionService } from './connection.service';
-import { io, Socket } from 'socket.io-client';
-import { INestApplication } from '@nestjs/common';
-import { IoAdapter } from '@nestjs/platform-socket.io';
 import { PinoLogger } from 'nestjs-pino';
+import { RealtimeRoomsService } from '../rooms/rooms.service';
+import { RedisService } from '../../redis/redis.service';
 
 describe('RealtimeGateway', () => {
-  let app: INestApplication;
   let gateway: RealtimeGateway;
   let jwtService: JwtService;
-  let clientSocket: Socket;
+  let roomsService: RealtimeRoomsService;
+  let connectionService: ConnectionService;
 
-  beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+  const mockSocket = {
+    id: 'test-socket-id',
+    handshake: {
+      auth: { token: 'test-token' },
+      headers: {},
+    },
+    data: { user: undefined } as any,
+    disconnect: jest.fn(),
+    join: jest.fn(),
+    leave: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
       providers: [
         RealtimeGateway,
-        ConnectionService,
         {
           provide: JwtService,
           useValue: {
             verify: jest.fn(),
+          },
+        },
+        {
+          provide: ConnectionService,
+          useValue: {
+            addConnections: jest.fn(),
+            removeConnection: jest.fn(),
+            getUserConnections: jest.fn().mockReturnValue([]),
           },
         },
         {
@@ -34,93 +52,166 @@ describe('RealtimeGateway', () => {
             setContext: jest.fn(),
           },
         },
+        {
+          provide: RealtimeRoomsService,
+          useValue: {
+            ensureUserPrivateRoom: jest.fn().mockResolvedValue(undefined),
+            joinRoom: jest.fn().mockResolvedValue(undefined),
+            leaveRoom: jest.fn().mockResolvedValue(undefined),
+            removeSocketFromAllRooms: jest.fn().mockResolvedValue(undefined),
+            emitToRoom: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: {
+            getClient: jest.fn().mockReturnValue({
+              status: 'ready',
+              duplicate: jest.fn().mockReturnValue({
+                status: 'ready',
+                psubscribe: jest.fn(),
+                subscribe: jest.fn(),
+                on: jest.fn(),
+                removeAllListeners: jest.fn(),
+              }),
+              psubscribe: jest.fn(),
+              subscribe: jest.fn(),
+              on: jest.fn(),
+              removeAllListeners: jest.fn(),
+            }),
+            waitUntilReady: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.useWebSocketAdapter(new IoAdapter(app));
-    gateway = moduleFixture.get<RealtimeGateway>(RealtimeGateway);
-    jwtService = moduleFixture.get<JwtService>(JwtService);
+    gateway = module.get<RealtimeGateway>(RealtimeGateway);
+    jwtService = module.get<JwtService>(JwtService);
+    roomsService = module.get<RealtimeRoomsService>(RealtimeRoomsService);
+    connectionService = module.get<ConnectionService>(ConnectionService);
 
-    await app.listen(3001);
+    // Mock the server property
+    gateway.server = {
+      adapter: jest.fn(),
+      to: jest.fn().mockReturnValue({
+        emit: jest.fn(),
+      }),
+    } as any;
   });
 
-  afterAll(async () => {
-    await app.close();
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  afterEach(() => {
-    if (clientSocket?.connected) {
-      clientSocket.disconnect();
-    }
+  it('should be defined', () => {
+    expect(gateway).toBeDefined();
   });
 
-  it('should accept valid JWT token', (done) => {
-    jest.spyOn(jwtService, 'verify').mockReturnValue({
+  it('should handle valid JWT token on connection', async () => {
+    const mockPayload = {
       sub: 'user123',
       role: 'user',
       email: 'test@example.com',
-    });
+    };
 
-    clientSocket = io('http://localhost:3001', {
-      auth: { token: 'valid-token' },
-    });
+    jest.spyOn(jwtService, 'verify').mockReturnValue(mockPayload);
 
-    clientSocket.on('connect', () => {
-      expect(clientSocket.connected).toBe(true);
-      done();
-    });
+    await gateway.handleConnection(mockSocket as any);
 
-    clientSocket.on('connect_error', () => {
-      done.fail('Should not receive connect_error for valid token');
+    expect(jwtService.verify).toHaveBeenCalledWith('test-token');
+    expect(mockSocket.data.user).toEqual({
+      userId: 'user123',
+      role: 'user',
+      email: 'test@example.com',
     });
-  }, 10000);
+    expect(connectionService.addConnections).toHaveBeenCalledWith(mockSocket);
+    expect(roomsService.ensureUserPrivateRoom).toHaveBeenCalledWith(mockSocket);
+  });
 
-  it('should reject invalid JWT token', (done) => {
+  it('should reject connection without token', async () => {
+    const socketWithoutToken = {
+      ...mockSocket,
+      handshake: {
+        auth: {},
+        headers: {},
+      },
+      disconnect: jest.fn(),
+    };
+
+    await gateway.handleConnection(socketWithoutToken as any);
+
+    // Wait for setImmediate to execute
+    await new Promise(resolve => setImmediate(resolve));
+
+    expect(socketWithoutToken.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it('should reject connection with invalid token', async () => {
     jest.spyOn(jwtService, 'verify').mockImplementation(() => {
       throw new Error('Invalid token');
     });
 
-    clientSocket = io('http://localhost:3001', {
-      auth: { token: 'invalid-token' },
-      timeout: 1000,
-    });
+    await gateway.handleConnection(mockSocket as any);
 
-    let connectReceived = false;
+    // Wait for setImmediate to execute
+    await new Promise(resolve => setImmediate(resolve));
 
-    clientSocket.on('connect', () => {
-      connectReceived = true;
-      // Wait a bit to see if disconnect happens immediately
-      setTimeout(() => {
-        if (clientSocket.connected) {
-          done(new Error('Should not remain connected with invalid token'));
-        } else {
-          // Connection was terminated, which is what we expect
-          done();
-        }
-      }, 100);
-    });
+    expect(mockSocket.disconnect).toHaveBeenCalledWith(true);
+  });
 
-    clientSocket.on('connect_error', (error) => {
-      if (!connectReceived) {
-        // This is the ideal case - connection was rejected before connect
-        expect(error).toBeDefined();
-        done();
-      }
-    });
+  it('should handle disconnect properly', () => {
+    mockSocket.data.user = { userId: 'user123' };
 
-    clientSocket.on('disconnect', () => {
-      if (connectReceived) {
-        // Connection was established then immediately terminated
-        done();
-      }
-    });
+    gateway.handleDisconnect(mockSocket as any);
 
-    // Timeout if nothing happens
-    setTimeout(() => {
-      if (!connectReceived) {
-        done(new Error('Test timeout - no connection or error event received'));
-      }
-    }, 2000);
-  }, 10000);
+    expect(connectionService.removeConnection).toHaveBeenCalledWith(mockSocket);
+    expect(roomsService.removeSocketFromAllRooms).toHaveBeenCalledWith('test-socket-id');
+  });
+
+  it('should join room on message', async () => {
+    await gateway.onJoinRoom(mockSocket as any, 'test-room');
+
+    expect(roomsService.joinRoom).toHaveBeenCalledWith(mockSocket, 'test-room');
+  });
+
+  it('should leave room on message', async () => {
+    await gateway.onLeaveRoom(mockSocket as any, 'test-room');
+
+    expect(roomsService.leaveRoom).toHaveBeenCalledWith(mockSocket, 'test-room');
+  });
+
+  it('should broadcast to room', async () => {
+    const broadcastData = {
+      room: 'test-room',
+      event: 'test-event',
+      payload: { message: 'hello' },
+    };
+
+    await gateway.onBroadcast(mockSocket as any, broadcastData);
+
+    expect(roomsService.emitToRoom).toHaveBeenCalledWith(
+      gateway.server,
+      'test-room',
+      'test-event',
+      { message: 'hello' },
+    );
+  });
+
+  it('should ignore empty room name in join', async () => {
+    await gateway.onJoinRoom(mockSocket as any, '');
+
+    expect(roomsService.joinRoom).not.toHaveBeenCalled();
+  });
+
+  it('should ignore empty room name in leave', async () => {
+    await gateway.onLeaveRoom(mockSocket as any, '');
+
+    expect(roomsService.leaveRoom).not.toHaveBeenCalled();
+  });
+
+  it('should ignore invalid broadcast data', async () => {
+    await gateway.onBroadcast(mockSocket as any, { room: '', event: 'test', payload: null });
+
+    expect(roomsService.emitToRoom).not.toHaveBeenCalled();
+  });
 });
