@@ -23,6 +23,10 @@ socket.on('connect', () => {
   console.log('✅ Successfully connected with ID:', socket.id);
 });
 
+// Join a room
+socket.emit('joinRoom', 'room1');
+socket.emit('leaveRoom', 'room1'); // Leave private room
+
 socket.on('connect_error', (error) => {
   console.log('❌ Connection error:', error.message);
 });
@@ -31,4 +35,4 @@ socket.on('connect_error', (error) => {
 setTimeout(() => {
   socket.disconnect();
   console.log('Disconnected');
-}, 5000);
+}, 10000);

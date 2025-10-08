@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { RealtimeGateway } from './gateway/realtime.gateway';
 import { AuthJwtModule } from '../auth/jwt.module';
 import { ConnectionService } from './gateway/connection.service';
-import { RoomsService } from './rooms/rooms.service';
+import { RealtimeRoomsService } from './rooms/rooms.service';
+import { RedisModule } from 'src/redis/redis.module';
 
 /**
  * RealtimeModule
@@ -11,8 +12,8 @@ import { RoomsService } from './rooms/rooms.service';
  *  - Keep this module focused: external modules should depend only on exported services (e.g. RoomsService)
  */
 @Module({
-  imports: [AuthJwtModule],
-  providers: [RealtimeGateway, ConnectionService, RoomsService],
-  exports: [RoomsService], // export if other modules need to emit to rooms
+  imports: [AuthJwtModule, RedisModule],
+  providers: [RealtimeGateway, ConnectionService, RealtimeRoomsService],
+  exports: [RealtimeRoomsService], // export if other modules need to emit to rooms
 })
 export class RealtimeModule {}

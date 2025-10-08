@@ -11,6 +11,10 @@ import { JwtService } from '@nestjs/jwt';
 import { ConnectionService } from './connection.service';
 import { LoggerUtil } from 'src/common/utils/logger.util';
 import { PinoLogger } from 'nestjs-pino';
+import { RealtimeRoomsService } from '../rooms/rooms.service';
+import { RedisService } from 'src/redis/redis.service';
+import { createAdapter } from '@socket.io/redis-adapter';
+import Redis from 'ioredis';
 
 @Injectable()
 @WebSocketGateway({
@@ -24,11 +28,58 @@ export class RealtimeGateway
   @WebSocketServer()
   server: Server;
 
+  private subClient: Redis;
+
   constructor(
     private jwtService: JwtService,
     private connectionService: ConnectionService,
     private readonly logger: PinoLogger,
+    private readonly roomsService: RealtimeRoomsService,
+    private readonly redisService: RedisService,
   ) {}
+
+  // ...existing code...
+  // Add after init hook
+  async afterInit() {
+    try {
+      // Wait for Redis to be ready
+      await this.redisService.waitUntilReady();
+
+      const pubClient = this.redisService.getClient();
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        'Got Redis pub client',
+        { status: pubClient.status },
+      );
+
+      this.subClient = pubClient.duplicate();
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        'Created Redis sub client',
+        { status: this.subClient.status },
+      );
+
+      // For Socket.IO Redis adapter, we don't need to manually connect the duplicate
+      // The adapter will handle the connection
+      this.server.adapter(createAdapter(pubClient, this.subClient));
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        'Redis adapter initialized successfully',
+      );
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeGateway',
+        'Failed to initialize Redis adapter',
+        error,
+      );
+      throw error;
+    }
+  }
+  // ...existing code...
 
   async handleConnection(client: Socket) {
     try {
@@ -61,6 +112,9 @@ export class RealtimeGateway
         this.connectionService.addConnections(client);
       }
 
+      // Auto-subscribe to private room
+      await this.roomsService.ensureUserPrivateRoom(client);
+
       LoggerUtil.logInfo(
         this.logger,
         'RealtimeGateway',
@@ -92,6 +146,9 @@ export class RealtimeGateway
     const userId =
       client.data.user?.userId || client.handshake.auth?.userId || 'unknown';
 
+    // Cleanup room state
+    this.roomsService.removeSocketFromAllRooms(client.id).catch(() => {});
+
     LoggerUtil.logInfo(
       this.logger,
       'RealtimeGateway',
@@ -105,14 +162,29 @@ export class RealtimeGateway
     );
   }
 
-  @SubscribeMessage('message')
-  handleMessage(client: Socket, payload: any) {
-    const userId = client.handshake.auth?.userId || 'anonymous';
-    LoggerUtil.logInfo(
-      this.logger,
-      'RealtimeGateway',
-      `Message received from ${userId}: ${JSON.stringify(payload)}`,
+  @SubscribeMessage('joinRoom')
+  async onJoinRoom(client: Socket, roomName: string) {
+    if (!roomName) return;
+    await this.roomsService.joinRoom(client, roomName);
+  }
+
+  @SubscribeMessage('leaveRoom')
+  async onLeaveRoom(client: Socket, roomName: string) {
+    if (!roomName) return;
+    await this.roomsService.leaveRoom(client, roomName);
+  }
+
+  @SubscribeMessage('broadcastToRoom')
+  async onBroadcast(
+    client: Socket,
+    data: { room: string; event: string; payload: any },
+  ) {
+    if (!data?.room || !data?.event) return;
+    await this.roomsService.emitToRoom(
+      this.server,
+      data.room,
+      data.event,
+      data.payload,
     );
-    // Your message handling logic here
   }
 }

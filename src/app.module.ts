@@ -8,6 +8,7 @@ import { AuthJwtModule } from './auth/jwt.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { HealthModule } from './health/health.module';
 import { LoggerModule } from 'nestjs-pino';
+import { RedisModule } from './redis/redis.module';
 // RoomsService is re-exported via RealtimeModule; direct import removed
 
 @Module({
@@ -42,6 +43,7 @@ import { LoggerModule } from 'nestjs-pino';
     AuthJwtModule,
     RealtimeModule,
     HealthModule,
+    RedisModule,
   ],
   controllers: [AppController],
   // RoomsService now provided by RealtimeModule
