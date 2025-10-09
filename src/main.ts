@@ -15,7 +15,7 @@ async function bootstrap() {
         brokers: ['localhost:9092'], // Kafka broker URL
       },
       consumer: {
-        groupId: 'my-consumer-group', // unique consumer group id
+        groupId: 'realtime-service-group', // unique consumer group id
       },
     },
   });
@@ -25,9 +25,9 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3000); // starts HTTP server
 
   logger.log(
-    '[Bootstrap] | Application is listening on port ' +
+    '[Bootstrap] | Realtime service is listening on port ' +
       (process.env.PORT ?? 3000),
   );
-  logger.log('[Bootstrap] | Kafka microservice is running...');
+  logger.log('[Bootstrap] | Realtime Kafka microservice is running...');
 }
 bootstrap();
