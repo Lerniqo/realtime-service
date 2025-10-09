@@ -132,7 +132,7 @@ describe('NotificationsService', () => {
       const userIds = ['user1'];
       const payload = { message: 'Error test' };
       const error = new Error('Gateway connection failed');
-      
+
       mockGateway.sendNotificationToUsers.mockImplementation(() => {
         throw error;
       });
@@ -189,13 +189,15 @@ describe('NotificationsService', () => {
       // Arrange
       const userIds = ['user1'];
       const payload = { message: 'Error test' };
-      
+
       mockGateway.sendNotificationToUsers.mockImplementation(() => {
         throw new Error('Gateway error');
       });
 
       // Act & Assert
-      await expect(service.sendToUsers(userIds, payload)).resolves.not.toThrow();
+      await expect(
+        service.sendToUsers(userIds, payload),
+      ).resolves.not.toThrow();
     });
   });
 });
