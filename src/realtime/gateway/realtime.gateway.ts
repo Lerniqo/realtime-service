@@ -24,7 +24,7 @@ import Redis from 'ioredis';
   },
 })
 export class RealtimeGateway
-  implements OnGatewayConnection, OnGatewayDisconnect , OnGatewayInit
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
 {
   @WebSocketServer()
   server: Server;
@@ -167,12 +167,22 @@ export class RealtimeGateway
   async onJoinRoom(client: Socket, roomName: string) {
     if (!roomName) return;
     await this.roomsService.joinRoom(client, roomName);
+    LoggerUtil.logInfo(
+      this.logger,
+      'RealtimeGateway',
+      `Client ${client.id} joined room ${roomName}`,
+    );
   }
 
   @SubscribeMessage('leaveRoom')
   async onLeaveRoom(client: Socket, roomName: string) {
     if (!roomName) return;
     await this.roomsService.leaveRoom(client, roomName);
+    LoggerUtil.logInfo(
+      this.logger,
+      'RealtimeGateway',
+      `Client ${client.id} left room ${roomName}`,
+    );
   }
 
   @SubscribeMessage('broadcastToRoom')
@@ -187,5 +197,26 @@ export class RealtimeGateway
       data.event,
       data.payload,
     );
+  }
+  /**
+   * Send a notification to a specific user's private room
+   */
+  sendNotification(userId: string, payload: any) {
+    this.server.to(`user:${userId}`).emit('notification:new', payload);
+    LoggerUtil.logInfo(
+      this.logger,
+      'RealtimeGateway',
+      `Sent notification to user ${userId}`,
+      { payload },
+    );
+  }
+
+  /**
+   * Send notifications to multiple users
+   */
+  sendNotificationToUsers(userIds: string[], payload: any) {
+    userIds.forEach((userId) => {
+      this.sendNotification(userId, payload);
+    });
   }
 }

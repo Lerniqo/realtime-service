@@ -223,4 +223,88 @@ describe('RealtimeGateway', () => {
 
     expect(roomsService.emitToRoom).not.toHaveBeenCalled();
   });
+
+  describe('sendNotification', () => {
+    it('should send notification to specific user', () => {
+      const userId = 'user123';
+      const payload = { message: 'Test notification', type: 'info' };
+      const mockEmit = jest.fn();
+
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      gateway.sendNotification(userId, payload);
+
+      expect(gateway.server.to).toHaveBeenCalledWith('user:user123');
+      expect(mockEmit).toHaveBeenCalledWith('notification:new', payload);
+    });
+
+    it('should handle notification with different payload types', () => {
+      const userId = 'user456';
+      const payload = { id: 1, title: 'New Message', data: { count: 5 } };
+      const mockEmit = jest.fn();
+
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      gateway.sendNotification(userId, payload);
+
+      expect(gateway.server.to).toHaveBeenCalledWith('user:user456');
+      expect(mockEmit).toHaveBeenCalledWith('notification:new', payload);
+    });
+  });
+
+  describe('sendNotificationToUsers', () => {
+    it('should send notification to multiple users', () => {
+      const userIds = ['user1', 'user2', 'user3'];
+      const payload = { message: 'Broadcast notification' };
+      const mockEmit = jest.fn();
+
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      // Spy on sendNotification to verify it's called for each user
+      const sendNotificationSpy = jest.spyOn(gateway, 'sendNotification');
+
+      gateway.sendNotificationToUsers(userIds, payload);
+
+      expect(sendNotificationSpy).toHaveBeenCalledTimes(3);
+      expect(sendNotificationSpy).toHaveBeenNthCalledWith(1, 'user1', payload);
+      expect(sendNotificationSpy).toHaveBeenNthCalledWith(2, 'user2', payload);
+      expect(sendNotificationSpy).toHaveBeenNthCalledWith(3, 'user3', payload);
+    });
+
+    it('should handle empty user list', () => {
+      const userIds: string[] = [];
+      const payload = { message: 'No recipients' };
+
+      // Spy on sendNotification to verify it's not called
+      const sendNotificationSpy = jest.spyOn(gateway, 'sendNotification');
+
+      gateway.sendNotificationToUsers(userIds, payload);
+
+      expect(sendNotificationSpy).not.toHaveBeenCalled();
+    });
+
+    it('should handle single user in array', () => {
+      const userIds = ['user-single'];
+      const payload = { message: 'Single user notification' };
+      const mockEmit = jest.fn();
+
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      // Spy on sendNotification
+      const sendNotificationSpy = jest.spyOn(gateway, 'sendNotification');
+
+      gateway.sendNotificationToUsers(userIds, payload);
+
+      expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
+      expect(sendNotificationSpy).toHaveBeenCalledWith('user-single', payload);
+    });
+  });
 });
