@@ -22,6 +22,6 @@ import { InternalNotifyController } from './notifications/internal-notify.contro
     RealtimeRoomsService,
     NotificationsService,
   ],
-  exports: [RealtimeRoomsService, NotificationsService], // export if other modules need to emit to rooms or send notifications
+  exports: [RealtimeRoomsService, NotificationsService, RealtimeGateway], // export if other modules need to emit to rooms or send notifications
 })
 export class RealtimeModule {}
