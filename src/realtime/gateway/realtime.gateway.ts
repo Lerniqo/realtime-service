@@ -16,6 +16,7 @@ import { RealtimeRoomsService } from '../rooms/rooms.service';
 import { RedisService } from 'src/redis/redis.service';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
+import { MatchmakingService } from '../matchmaking/matchmaking.service';
 
 @Injectable()
 @WebSocketGateway({
@@ -37,6 +38,7 @@ export class RealtimeGateway
     private readonly logger: PinoLogger,
     private readonly roomsService: RealtimeRoomsService,
     private readonly redisService: RedisService,
+    private readonly matchmakingService: MatchmakingService,
   ) {}
 
   // ...existing code...
@@ -198,6 +200,29 @@ export class RealtimeGateway
       data.payload,
     );
   }
+
+  @SubscribeMessage('matchmaking:join')
+  async onJoinMatchmakingQueue(client: Socket, payload: { gameType: string }) {
+    try {
+      await this.matchmakingService.addToMatchingQueue(
+        client.id,
+        payload.gameType,
+      );
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeService',
+        `Client ${client.id} added to matchmaking queue for ${payload.gameType}`,
+      );
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeService',
+        `Error adding client ${client.id} to matchmaking queue for ${payload.gameType}: ${error}`,
+        { error },
+      );
+    }
+  }
+
   /**
    * Send a notification to a specific user's private room
    */

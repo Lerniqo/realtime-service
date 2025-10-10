@@ -12,7 +12,7 @@ const token = jwt.sign(
   { expiresIn: '1h' },
 );
 
-// Connect with valid token
+// Create socket connection with auth token
 const socket = io('http://localhost:3000', {
   auth: {
     token: token,
@@ -21,6 +21,10 @@ const socket = io('http://localhost:3000', {
 
 socket.on('connect', () => {
   console.log('✅ Successfully connected with ID:', socket.id);
+
+  // Test the matchmaking:join event
+  console.log('📤 Sending matchmaking:join event...');
+  socket.emit('matchmaking:join', { gameType: '1v1_rapid_quiz' });
 });
 
 // Join a room
