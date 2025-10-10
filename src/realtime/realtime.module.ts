@@ -7,6 +7,7 @@ import { RedisModule } from 'src/redis/redis.module';
 import { NotificationsService } from './notifications/notifications.service';
 import { InternalNotifyController } from './notifications/internal-notify.controller';
 import { MatchmakingService } from './matchmaking/matchmaking.service';
+import { MatchmakingModule } from './matchmaking/matchmaking.module';
 
 /**
  * RealtimeModule
@@ -15,7 +16,7 @@ import { MatchmakingService } from './matchmaking/matchmaking.service';
  *  - Keep this module focused: external modules should depend only on exported services (e.g. RoomsService)
  */
 @Module({
-  imports: [AuthJwtModule, RedisModule],
+  imports: [AuthJwtModule, RedisModule, MatchmakingModule],
   controllers: [InternalNotifyController],
   providers: [
     RealtimeGateway,
