@@ -5,12 +5,14 @@ import { ConnectionService } from './connection.service';
 import { PinoLogger } from 'nestjs-pino';
 import { RealtimeRoomsService } from '../rooms/rooms.service';
 import { RedisService } from '../../redis/redis.service';
+import { MatchmakingService } from '../matchmaking/matchmaking.service';
 
 describe('RealtimeGateway', () => {
   let gateway: RealtimeGateway;
   let jwtService: JwtService;
   let roomsService: RealtimeRoomsService;
   let connectionService: ConnectionService;
+  let matchmakingService: MatchmakingService;
 
   const mockSocket = {
     id: 'test-socket-id',
@@ -82,6 +84,12 @@ describe('RealtimeGateway', () => {
             waitUntilReady: jest.fn().mockResolvedValue(undefined),
           },
         },
+        {
+          provide: MatchmakingService,
+          useValue: {
+            addToMatchingQueue: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -89,6 +97,7 @@ describe('RealtimeGateway', () => {
     jwtService = module.get<JwtService>(JwtService);
     roomsService = module.get<RealtimeRoomsService>(RealtimeRoomsService);
     connectionService = module.get<ConnectionService>(ConnectionService);
+    matchmakingService = module.get<MatchmakingService>(MatchmakingService);
 
     // Mock the server property
     gateway.server = {
@@ -305,6 +314,120 @@ describe('RealtimeGateway', () => {
 
       expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
       expect(sendNotificationSpy).toHaveBeenCalledWith('user-single', payload);
+    });
+  });
+
+  describe('onJoinMatchmakingQueue', () => {
+    const mockSocket1 = {
+      id: 'socket-1',
+      handshake: { auth: { token: 'token1' } },
+      data: { user: { userId: 'user1' } },
+    };
+
+    const mockSocket2 = {
+      id: 'socket-2',
+      handshake: { auth: { token: 'token2' } },
+      data: { user: { userId: 'user2' } },
+    };
+
+    it('should successfully add user to matchmaking queue with correct game type', async () => {
+      const payload = { gameType: '1v1_rapid_quiz' };
+
+      jest.spyOn(matchmakingService, 'addToMatchingQueue').mockResolvedValue();
+
+      await gateway.onJoinMatchmakingQueue(mockSocket1 as any, payload);
+
+      expect(matchmakingService.addToMatchingQueue).toHaveBeenCalledWith(
+        'socket-1',
+        '1v1_rapid_quiz',
+      );
+    });
+
+    it('should handle error when user tries to join with incorrect game type', async () => {
+      const payload = { gameType: 'invalid_game_type' };
+
+      jest
+        .spyOn(matchmakingService, 'addToMatchingQueue')
+        .mockRejectedValue(new Error('Unsupported game type'));
+
+      // Spy on console methods to avoid actual console output during tests
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      await gateway.onJoinMatchmakingQueue(mockSocket1 as any, payload);
+
+      expect(matchmakingService.addToMatchingQueue).toHaveBeenCalledWith(
+        'socket-1',
+        'invalid_game_type',
+      );
+
+      // Restore console.error
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should handle multiple users trying to join matchmaking queue', async () => {
+      const payload = { gameType: '1v1_rapid_quiz' };
+
+      jest.spyOn(matchmakingService, 'addToMatchingQueue').mockResolvedValue();
+
+      // First user joins queue
+      await gateway.onJoinMatchmakingQueue(mockSocket1 as any, payload);
+
+      // Second user joins queue
+      await gateway.onJoinMatchmakingQueue(mockSocket2 as any, payload);
+
+      expect(matchmakingService.addToMatchingQueue).toHaveBeenCalledTimes(2);
+      expect(matchmakingService.addToMatchingQueue).toHaveBeenNthCalledWith(
+        1,
+        'socket-1',
+        '1v1_rapid_quiz',
+      );
+      expect(matchmakingService.addToMatchingQueue).toHaveBeenNthCalledWith(
+        2,
+        'socket-2',
+        '1v1_rapid_quiz',
+      );
+    });
+
+    it('should handle mixed scenario - one user with correct type, one with incorrect type', async () => {
+      const correctPayload = { gameType: '1v1_rapid_quiz' };
+      const incorrectPayload = { gameType: 'invalid_type' };
+
+      jest
+        .spyOn(matchmakingService, 'addToMatchingQueue')
+        .mockImplementation((clientId, gameType) => {
+          if (gameType === '1v1_rapid_quiz') {
+            return Promise.resolve();
+          } else {
+            return Promise.reject(new Error('Unsupported game type'));
+          }
+        });
+
+      // Spy on console methods to avoid actual console output during tests
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      // First user with correct game type
+      await gateway.onJoinMatchmakingQueue(mockSocket1 as any, correctPayload);
+
+      // Second user with incorrect game type
+      await gateway.onJoinMatchmakingQueue(
+        mockSocket2 as any,
+        incorrectPayload,
+      );
+
+      expect(matchmakingService.addToMatchingQueue).toHaveBeenCalledTimes(2);
+      expect(matchmakingService.addToMatchingQueue).toHaveBeenNthCalledWith(
+        1,
+        'socket-1',
+        '1v1_rapid_quiz',
+      );
+      expect(matchmakingService.addToMatchingQueue).toHaveBeenNthCalledWith(
+        2,
+        'socket-2',
+        'invalid_type',
+      );
+
+      // Restore console.error
+      consoleErrorSpy.mockRestore();
     });
   });
 });

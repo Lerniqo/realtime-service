@@ -6,6 +6,7 @@ import { RealtimeRoomsService } from './rooms/rooms.service';
 import { RedisModule } from 'src/redis/redis.module';
 import { NotificationsService } from './notifications/notifications.service';
 import { InternalNotifyController } from './notifications/internal-notify.controller';
+import { MatchmakingService } from './matchmaking/matchmaking.service';
 
 /**
  * RealtimeModule
@@ -21,6 +22,7 @@ import { InternalNotifyController } from './notifications/internal-notify.contro
     ConnectionService,
     RealtimeRoomsService,
     NotificationsService,
+    MatchmakingService,
   ],
   exports: [RealtimeRoomsService, NotificationsService, RealtimeGateway], // export if other modules need to emit to rooms or send notifications
 })

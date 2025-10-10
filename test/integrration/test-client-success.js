@@ -24,7 +24,7 @@ socket.on('connect', () => {
 
   // Test the matchmaking:join event
   console.log('📤 Sending matchmaking:join event...');
-  socket.emit('matchmaking:join', { gameType: '1v1' });
+  socket.emit('matchmaking:join', { gameType: '1v1_rapid_quiz' });
 });
 
 // Join a room
