@@ -202,10 +202,14 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('matchmaking:join')
-  async onJoinMatchmakingQueue(client: Socket, payload: { gameType: string }) {
+  async onJoinMatchmakingQueue(
+    client: Socket,
+    payload: { userId: string; gameType: string },
+  ) {
     try {
       await this.matchmakingService.addToMatchingQueue(
         client.id,
+        payload.userId,
         payload.gameType,
       );
       LoggerUtil.logInfo(
@@ -248,10 +252,24 @@ export class RealtimeGateway
   /**
    * Notify both players that a match has been found
    */
-  notifyMatchFound(matchId: string, clientAId: string, clientBId: string) {
+  notifyMatchFound(
+    matchId: string,
+    clientAId: string,
+    clientBId: string,
+    userAId: string,
+    userBId: string,
+    questions: Array<{ id: number; question: string; options: string[] }>,
+  ) {
     try {
       // Validate input parameters
-      if (!matchId || !clientAId || !clientBId) {
+      if (
+        !matchId ||
+        !clientAId ||
+        !clientBId ||
+        !userAId ||
+        !userBId ||
+        !questions
+      ) {
         LoggerUtil.logError(
           this.logger,
           'RealtimeGateway',
@@ -260,6 +278,9 @@ export class RealtimeGateway
             matchId,
             clientAId,
             clientBId,
+            userAId,
+            userBId,
+            questionsCount: questions?.length || 0,
           },
         );
         return;
@@ -276,19 +297,30 @@ export class RealtimeGateway
         return;
       }
 
-      const matchFoundPayload = { matchId };
+      const matchFoundPayload = {
+        matchId,
+        questions: questions,
+      };
 
       // Send match found event to client A with opponent's ID
       try {
         this.server.to(clientAId).emit('match:found', {
           ...matchFoundPayload,
           opponentClientId: clientBId,
+          opponentUserId: userBId,
         });
         LoggerUtil.logInfo(
           this.logger,
           'RealtimeGateway',
           `Match found notification sent to client A`,
-          { matchId, clientId: clientAId, opponentId: clientBId },
+          {
+            matchId,
+            clientId: clientAId,
+            userId: userAId,
+            opponentClientId: clientBId,
+            opponentUserId: userBId,
+            questionsCount: questions.length,
+          },
         );
       } catch (error) {
         LoggerUtil.logError(
@@ -304,12 +336,20 @@ export class RealtimeGateway
         this.server.to(clientBId).emit('match:found', {
           ...matchFoundPayload,
           opponentClientId: clientAId,
+          opponentUserId: userAId,
         });
         LoggerUtil.logInfo(
           this.logger,
           'RealtimeGateway',
           `Match found notification sent to client B`,
-          { matchId, clientId: clientBId, opponentId: clientAId },
+          {
+            matchId,
+            clientId: clientBId,
+            userId: userBId,
+            opponentClientId: clientAId,
+            opponentUserId: userAId,
+            questionsCount: questions.length,
+          },
         );
       } catch (error) {
         LoggerUtil.logError(
@@ -328,6 +368,9 @@ export class RealtimeGateway
           matchId,
           clientAId,
           clientBId,
+          userAId,
+          userBId,
+          questionsCount: questions.length,
         },
       );
     } catch (error) {
@@ -340,6 +383,9 @@ export class RealtimeGateway
           matchId,
           clientAId,
           clientBId,
+          userAId,
+          userBId,
+          questionsCount: questions?.length || 0,
         },
       );
     }
