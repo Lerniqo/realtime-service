@@ -28,6 +28,9 @@ describe('MatchmakingWorker', () => {
   let mockSocket2: Partial<Socket>;
 
   beforeEach(async () => {
+    // Clear all mocks before each test
+    jest.clearAllMocks();
+
     // Create mock Redis client
     mockRedisClient = {
       lrange: jest.fn(),
@@ -65,6 +68,7 @@ describe('MatchmakingWorker', () => {
           ]),
         },
       },
+      notifyMatchFound: jest.fn(), // Add the missing notifyMatchFound method
     };
 
     const mockLogger = {
@@ -102,6 +106,7 @@ describe('MatchmakingWorker', () => {
   });
 
   afterEach(() => {
+    // Clear all mocks after each test
     jest.clearAllMocks();
   });
 
@@ -289,6 +294,35 @@ describe('MatchmakingWorker', () => {
 
       expect(mockRedisClient.lrem).toHaveBeenCalledTimes(2);
       expect(roomsService.joinRoom).toHaveBeenCalledTimes(2);
+    });
+
+    it('should call notifyMatchFound when match is created', async () => {
+      mockRedisClient.lrange.mockResolvedValue(['client1', 'client2']);
+
+      await worker.handleMatchmaking();
+
+      expect(gateway.notifyMatchFound).toHaveBeenCalledTimes(1);
+      expect(gateway.notifyMatchFound).toHaveBeenCalledWith(
+        expect.stringMatching(/^match:\d+-[a-z0-9]+$/),
+        'client1',
+        'client2',
+      );
+    });
+
+    it('should call notifyMatchFound even when sockets are missing', async () => {
+      mockRedisClient.lrange.mockResolvedValue([
+        'nonexistent1',
+        'nonexistent2',
+      ]);
+
+      await worker.handleMatchmaking();
+
+      expect(gateway.notifyMatchFound).toHaveBeenCalledTimes(1);
+      expect(gateway.notifyMatchFound).toHaveBeenCalledWith(
+        expect.stringMatching(/^match:\d+-[a-z0-9]+$/),
+        'nonexistent1',
+        'nonexistent2',
+      );
     });
   });
 });

@@ -54,6 +54,9 @@ export class MatchmakingWorker {
             await this.roomsService.joinRoom(socket2, matchId);
           }
 
+          // Notify both players that a match has been found
+          this.gateway.notifyMatchFound(matchId, clientId1, clientId2);
+
           LoggerUtil.logInfo(
             this.logger,
             'matchmaking-worker',
