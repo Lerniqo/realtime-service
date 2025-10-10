@@ -1,42 +1,80 @@
 const { io } = require('socket.io-client');
 const jwt = require('jsonwebtoken');
 
-// Generate test JWT token
-const token = jwt.sign(
+// Generate test JWT tokens for two different users
+const token1 = jwt.sign(
   {
     sub: 'user123',
     role: 'user',
-    email: 'test@example.com',
+    email: 'test1@example.com',
   },
-  'SunimalSirgeThatte', // Use your JWT_SECRET
+  'defaultSecret', // Use the default JWT_SECRET from server
   { expiresIn: '1h' },
 );
 
-// Create socket connection with auth token
-const socket = io('http://localhost:3000', {
+const token2 = jwt.sign(
+  {
+    sub: 'user456',
+    role: 'user',
+    email: 'test2@example.com',
+  },
+  'defaultSecret', // Use the default JWT_SECRET from server
+  { expiresIn: '1h' },
+);
+
+// Create first socket connection
+const socket1 = io('http://localhost:3000', {
   auth: {
-    token: token,
+    token: token1,
   },
 });
 
-socket.on('connect', () => {
-  console.log('✅ Successfully connected with ID:', socket.id);
-
-  // Test the matchmaking:join event
-  console.log('📤 Sending matchmaking:join event...');
-  socket.emit('matchmaking:join', { gameType: '1v1_rapid_quiz' });
+// Create second socket connection
+const socket2 = io('http://localhost:3000', {
+  auth: {
+    token: token2,
+  },
 });
 
-// Join a room
-socket.emit('joinRoom', 'room1');
-socket.emit('leaveRoom', 'room1'); // Leave private room
+socket1.on('connect', () => {
+  console.log('✅ Player 1 successfully connected with ID:', socket1.id);
 
-socket.on('connect_error', (error) => {
-  console.log('❌ Connection error:', error.message);
+  // Test the matchmaking:join event for player 1
+  console.log('📤 Player 1 sending matchmaking:join event...');
+  socket1.emit('matchmaking:join', { gameType: '1v1_rapid_quiz' });
 });
 
-// Keep alive for 5 seconds then disconnect
+socket2.on('connect', () => {
+  console.log('✅ Player 2 successfully connected with ID:', socket2.id);
+
+  // Test the matchmaking:join event for player 2 (slight delay to see the effect)
+  setTimeout(() => {
+    console.log('📤 Player 2 sending matchmaking:join event...');
+    socket2.emit('matchmaking:join', { gameType: '1v1_rapid_quiz' });
+  }, 1000);
+});
+
+// Listen for any events that might indicate a match was found
+socket1.on('matchFound', (data) => {
+  console.log('🎯 Player 1 received matchFound:', data);
+});
+
+socket2.on('matchFound', (data) => {
+  console.log('🎯 Player 2 received matchFound:', data);
+});
+
+socket1.on('connect_error', (error) => {
+  console.log('❌ Player 1 connection error:', error.message);
+});
+
+socket2.on('connect_error', (error) => {
+  console.log('❌ Player 2 connection error:', error.message);
+});
+
+// Keep alive for 15 seconds to allow time for matchmaking worker to run
 setTimeout(() => {
-  socket.disconnect();
-  console.log('Disconnected');
-}, 10000);
+  console.log('🔌 Disconnecting both players...');
+  socket1.disconnect();
+  socket2.disconnect();
+  console.log('Disconnected both players');
+}, 15000);
