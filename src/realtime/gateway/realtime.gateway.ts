@@ -198,6 +198,15 @@ export class RealtimeGateway
       data.payload,
     );
   }
+
+  @SubscribeMessage('matchmaking:join')
+  onJoinQueue(client: Socket, payload: { gameType: string }) {
+    const authToken = client.handshake.auth?.token || 'no token';
+    console.log('Matchmaking:join event received');
+    console.log('Payload:', payload);
+    console.log('Auth Token:', authToken);
+  }
+
   /**
    * Send a notification to a specific user's private room
    */
