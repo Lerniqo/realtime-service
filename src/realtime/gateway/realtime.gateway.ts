@@ -244,4 +244,104 @@ export class RealtimeGateway
       this.sendNotification(userId, payload);
     });
   }
+
+  /**
+   * Notify both players that a match has been found
+   */
+  notifyMatchFound(matchId: string, clientAId: string, clientBId: string) {
+    try {
+      // Validate input parameters
+      if (!matchId || !clientAId || !clientBId) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Invalid parameters for notifyMatchFound',
+          {
+            matchId,
+            clientAId,
+            clientBId,
+          },
+        );
+        return;
+      }
+
+      // Ensure the server is available
+      if (!this.server) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'WebSocket server is not available',
+          { matchId, clientAId, clientBId },
+        );
+        return;
+      }
+
+      const matchFoundPayload = { matchId };
+
+      // Send match found event to client A with opponent's ID
+      try {
+        this.server.to(clientAId).emit('match:found', {
+          ...matchFoundPayload,
+          opponentClientId: clientBId,
+        });
+        LoggerUtil.logInfo(
+          this.logger,
+          'RealtimeGateway',
+          `Match found notification sent to client A`,
+          { matchId, clientId: clientAId, opponentId: clientBId },
+        );
+      } catch (error) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          `Failed to send match found notification to client A`,
+          { error, matchId, clientId: clientAId },
+        );
+      }
+
+      // Send match found event to client B with opponent's ID
+      try {
+        this.server.to(clientBId).emit('match:found', {
+          ...matchFoundPayload,
+          opponentClientId: clientAId,
+        });
+        LoggerUtil.logInfo(
+          this.logger,
+          'RealtimeGateway',
+          `Match found notification sent to client B`,
+          { matchId, clientId: clientBId, opponentId: clientAId },
+        );
+      } catch (error) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          `Failed to send match found notification to client B`,
+          { error, matchId, clientId: clientBId },
+        );
+      }
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        `Match found notification process completed`,
+        {
+          matchId,
+          clientAId,
+          clientBId,
+        },
+      );
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeGateway',
+        'Unexpected error in notifyMatchFound',
+        {
+          error,
+          matchId,
+          clientAId,
+          clientBId,
+        },
+      );
+    }
+  }
 }

@@ -430,4 +430,285 @@ describe('RealtimeGateway', () => {
       consoleErrorSpy.mockRestore();
     });
   });
+
+  describe('notifyMatchFound', () => {
+    const matchId = 'match:123456-abc789';
+    const clientAId = 'socket-client-a';
+    const clientBId = 'socket-client-b';
+
+    beforeEach(() => {
+      // Reset server mock
+      gateway.server = {
+        to: jest.fn().mockReturnValue({
+          emit: jest.fn(),
+        }),
+      } as any;
+    });
+
+    it('should successfully notify both players when match is found', () => {
+      const mockEmit = jest.fn();
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      gateway.notifyMatchFound(matchId, clientAId, clientBId);
+
+      // Verify that server.to was called for both clients
+      expect(gateway.server.to).toHaveBeenCalledTimes(2);
+      expect(gateway.server.to).toHaveBeenNthCalledWith(1, clientAId);
+      expect(gateway.server.to).toHaveBeenNthCalledWith(2, clientBId);
+
+      // Verify emit was called with correct data for both clients
+      expect(mockEmit).toHaveBeenCalledTimes(2);
+      expect(mockEmit).toHaveBeenNthCalledWith(1, 'match:found', {
+        matchId,
+        opponentClientId: clientBId,
+      });
+      expect(mockEmit).toHaveBeenNthCalledWith(2, 'match:found', {
+        matchId,
+        opponentClientId: clientAId,
+      });
+    });
+
+    it('should handle missing matchId parameter', () => {
+      const mockEmit = jest.fn();
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      gateway.notifyMatchFound('', clientAId, clientBId);
+
+      // Should not attempt to send notifications with invalid parameters
+      expect(gateway.server.to).not.toHaveBeenCalled();
+      expect(mockEmit).not.toHaveBeenCalled();
+    });
+
+    it('should handle missing clientAId parameter', () => {
+      const mockEmit = jest.fn();
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      gateway.notifyMatchFound(matchId, '', clientBId);
+
+      // Should not attempt to send notifications with invalid parameters
+      expect(gateway.server.to).not.toHaveBeenCalled();
+      expect(mockEmit).not.toHaveBeenCalled();
+    });
+
+    it('should handle missing clientBId parameter', () => {
+      const mockEmit = jest.fn();
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      gateway.notifyMatchFound(matchId, clientAId, '');
+
+      // Should not attempt to send notifications with invalid parameters
+      expect(gateway.server.to).not.toHaveBeenCalled();
+      expect(mockEmit).not.toHaveBeenCalled();
+    });
+
+    it('should handle null/undefined parameters gracefully', () => {
+      const mockEmit = jest.fn();
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      // Test with null values
+      gateway.notifyMatchFound(null as any, clientAId, clientBId);
+      gateway.notifyMatchFound(matchId, null as any, clientBId);
+      gateway.notifyMatchFound(matchId, clientAId, null as any);
+
+      // Test with undefined values
+      gateway.notifyMatchFound(undefined as any, clientAId, clientBId);
+      gateway.notifyMatchFound(matchId, undefined as any, clientBId);
+      gateway.notifyMatchFound(matchId, clientAId, undefined as any);
+
+      // Should not attempt to send notifications with invalid parameters
+      expect(gateway.server.to).not.toHaveBeenCalled();
+      expect(mockEmit).not.toHaveBeenCalled();
+    });
+
+    it('should handle server unavailable scenario', () => {
+      // Set server to null to simulate unavailable server
+      gateway.server = null as any;
+
+      // Should not throw error when server is unavailable
+      expect(() => {
+        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+      }).not.toThrow();
+    });
+
+    it('should handle server undefined scenario', () => {
+      // Set server to undefined
+      gateway.server = undefined as any;
+
+      // Should not throw error when server is undefined
+      expect(() => {
+        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+      }).not.toThrow();
+    });
+
+    it('should handle error when emitting to client A but continue with client B', () => {
+      const mockEmitA = jest.fn().mockImplementation(() => {
+        throw new Error('Failed to emit to client A');
+      });
+      const mockEmitB = jest.fn();
+
+      gateway.server.to = jest.fn().mockImplementation((clientId) => {
+        if (clientId === clientAId) {
+          return { emit: mockEmitA };
+        } else if (clientId === clientBId) {
+          return { emit: mockEmitB };
+        }
+      });
+
+      // Should not throw error even if one client emission fails
+      expect(() => {
+        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+      }).not.toThrow();
+
+      // Verify both clients were attempted
+      expect(gateway.server.to).toHaveBeenCalledTimes(2);
+      expect(gateway.server.to).toHaveBeenNthCalledWith(1, clientAId);
+      expect(gateway.server.to).toHaveBeenNthCalledWith(2, clientBId);
+
+      // Verify client A emission was attempted and failed
+      expect(mockEmitA).toHaveBeenCalledWith('match:found', {
+        matchId,
+        opponentClientId: clientBId,
+      });
+
+      // Verify client B emission succeeded
+      expect(mockEmitB).toHaveBeenCalledWith('match:found', {
+        matchId,
+        opponentClientId: clientAId,
+      });
+    });
+
+    it('should handle error when emitting to client B but continue normally', () => {
+      const mockEmitA = jest.fn();
+      const mockEmitB = jest.fn().mockImplementation(() => {
+        throw new Error('Failed to emit to client B');
+      });
+
+      gateway.server.to = jest.fn().mockImplementation((clientId) => {
+        if (clientId === clientAId) {
+          return { emit: mockEmitA };
+        } else if (clientId === clientBId) {
+          return { emit: mockEmitB };
+        }
+      });
+
+      // Should not throw error even if one client emission fails
+      expect(() => {
+        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+      }).not.toThrow();
+
+      // Verify both clients were attempted
+      expect(gateway.server.to).toHaveBeenCalledTimes(2);
+
+      // Verify client A emission succeeded
+      expect(mockEmitA).toHaveBeenCalledWith('match:found', {
+        matchId,
+        opponentClientId: clientBId,
+      });
+
+      // Verify client B emission was attempted and failed
+      expect(mockEmitB).toHaveBeenCalledWith('match:found', {
+        matchId,
+        opponentClientId: clientAId,
+      });
+    });
+
+    it('should handle errors when emitting to both clients', () => {
+      const mockEmitA = jest.fn().mockImplementation(() => {
+        throw new Error('Failed to emit to client A');
+      });
+      const mockEmitB = jest.fn().mockImplementation(() => {
+        throw new Error('Failed to emit to client B');
+      });
+
+      gateway.server.to = jest.fn().mockImplementation((clientId) => {
+        if (clientId === clientAId) {
+          return { emit: mockEmitA };
+        } else if (clientId === clientBId) {
+          return { emit: mockEmitB };
+        }
+      });
+
+      // Should not throw error even if both client emissions fail
+      expect(() => {
+        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+      }).not.toThrow();
+
+      // Verify both clients were attempted
+      expect(gateway.server.to).toHaveBeenCalledTimes(2);
+      expect(mockEmitA).toHaveBeenCalled();
+      expect(mockEmitB).toHaveBeenCalled();
+    });
+
+    it('should handle server.to method throwing error', () => {
+      gateway.server.to = jest.fn().mockImplementation(() => {
+        throw new Error('Server.to method failed');
+      });
+
+      // Should not throw error even if server.to fails
+      expect(() => {
+        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+      }).not.toThrow();
+
+      // Verify server.to was attempted
+      expect(gateway.server.to).toHaveBeenCalled();
+    });
+
+    it('should work with different match ID formats', () => {
+      const differentMatchIds = [
+        'match:1234567890-abcdef',
+        'game-session-uuid-123',
+        'rapid-quiz-match-456',
+        'tournament:finals:789',
+      ];
+
+      const mockEmit = jest.fn();
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      differentMatchIds.forEach((testMatchId) => {
+        gateway.notifyMatchFound(testMatchId, clientAId, clientBId);
+
+        expect(mockEmit).toHaveBeenCalledWith('match:found', {
+          matchId: testMatchId,
+          opponentClientId: expect.any(String),
+        });
+      });
+
+      expect(mockEmit).toHaveBeenCalledTimes(differentMatchIds.length * 2); // 2 calls per match
+    });
+
+    it('should work with different client ID formats', () => {
+      const clientPairs = [
+        ['socket-123', 'socket-456'],
+        ['user:abc:socket:def', 'user:ghi:socket:jkl'],
+        ['client_session_789', 'client_session_012'],
+        ['ws-connection-345', 'ws-connection-678'],
+      ];
+
+      const mockEmit = jest.fn();
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      clientPairs.forEach(([clientA, clientB]) => {
+        gateway.notifyMatchFound(matchId, clientA, clientB);
+
+        expect(gateway.server.to).toHaveBeenCalledWith(clientA);
+        expect(gateway.server.to).toHaveBeenCalledWith(clientB);
+      });
+
+      expect(gateway.server.to).toHaveBeenCalledTimes(clientPairs.length * 2);
+    });
+  });
 });

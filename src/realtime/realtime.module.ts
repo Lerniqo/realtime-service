@@ -7,6 +7,8 @@ import { RedisModule } from 'src/redis/redis.module';
 import { NotificationsService } from './notifications/notifications.service';
 import { InternalNotifyController } from './notifications/internal-notify.controller';
 import { MatchmakingService } from './matchmaking/matchmaking.service';
+import { MatchmakingWorker } from './matchmaking/matchmaking.worker';
+import { ScheduleModule } from '@nestjs/schedule';
 
 /**
  * RealtimeModule
@@ -15,7 +17,7 @@ import { MatchmakingService } from './matchmaking/matchmaking.service';
  *  - Keep this module focused: external modules should depend only on exported services (e.g. RoomsService)
  */
 @Module({
-  imports: [AuthJwtModule, RedisModule],
+  imports: [AuthJwtModule, RedisModule, ScheduleModule.forRoot()],
   controllers: [InternalNotifyController],
   providers: [
     RealtimeGateway,
@@ -23,6 +25,7 @@ import { MatchmakingService } from './matchmaking/matchmaking.service';
     RealtimeRoomsService,
     NotificationsService,
     MatchmakingService,
+    MatchmakingWorker,
   ],
   exports: [RealtimeRoomsService, NotificationsService, RealtimeGateway], // export if other modules need to emit to rooms or send notifications
 })
