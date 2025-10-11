@@ -18,7 +18,12 @@ import { ContentModule } from 'src/content/content.module';
  *  - Keep this module focused: external modules should depend only on exported services (e.g. RoomsService)
  */
 @Module({
-  imports: [AuthJwtModule, RedisModule, ScheduleModule.forRoot(), ContentModule],
+  imports: [
+    AuthJwtModule,
+    RedisModule,
+    ScheduleModule.forRoot(),
+    ContentModule,
+  ],
   controllers: [InternalNotifyController],
   providers: [
     RealtimeGateway,
