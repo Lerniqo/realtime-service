@@ -227,6 +227,267 @@ export class RealtimeGateway
     }
   }
 
+  @SubscribeMessage('match:submitAnswer')
+  async onSubmitAnswer(
+    client: Socket,
+    payload: { answer: string; timer: number },
+  ) {
+    try {
+      const redisClient = this.redisService.getClient();
+
+      // Get all rooms this socket is in
+      const socketRooms = await this.roomsService.getSocketRooms(client.id);
+
+      // Find the match room (room that starts with 'match:')
+      const matchRoom = socketRooms.find((room) => room.startsWith('match:'));
+
+      if (!matchRoom) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'No match room found for socket',
+          {
+            clientId: client.id,
+            userId: client.data.user?.userId,
+            socketRooms,
+          },
+        );
+        return;
+      }
+
+      const matchId = matchRoom;
+
+      // Get player socket IDs from Redis
+      const playerASocketId = await redisClient.get(
+        `${matchId}:playerASocketId`,
+      );
+      const playerBSocketId = await redisClient.get(
+        `${matchId}:playerBSocketId`,
+      );
+
+      let isPlayerA = false;
+      let isPlayerB = false;
+      let playerKey = '';
+
+      // Check if this socket is player A
+      if (playerASocketId === client.id) {
+        isPlayerA = true;
+        playerKey = 'playerA';
+      }
+      // Check if this socket is player B
+      else if (playerBSocketId === client.id) {
+        isPlayerB = true;
+        playerKey = 'playerB';
+      } else {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Socket is not a valid player in this match',
+          {
+            clientId: client.id,
+            userId: client.data.user?.userId,
+            matchId,
+            playerASocketId,
+            playerBSocketId,
+          },
+        );
+        return;
+      }
+
+      // Get current player status from Redis
+      const playerStatusJson = await redisClient.get(
+        `${matchId}:${playerKey}Status`,
+      );
+      if (!playerStatusJson) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Player status not found in Redis',
+          {
+            clientId: client.id,
+            matchId,
+            playerKey,
+          },
+        );
+        return;
+      }
+
+      const playerStatus = JSON.parse(playerStatusJson);
+
+      // Update timer
+      playerStatus.timer = payload.timer;
+
+      // Get answers from Redis
+      const answersJson = await redisClient.get(`${matchId}:answers`);
+      if (!answersJson) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Match answers not found in Redis',
+          {
+            clientId: client.id,
+            matchId,
+          },
+        );
+        return;
+      }
+
+      const answers = JSON.parse(answersJson);
+      const activeQuestionIndex = playerStatus.activeQuestionIndex;
+
+      // Get questions to find the correct question ID
+      const questionsJson = await redisClient.get(`${matchId}:questions`);
+      if (!questionsJson) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Match questions not found in Redis',
+          {
+            clientId: client.id,
+            matchId,
+          },
+        );
+        return;
+      }
+
+      const questions = JSON.parse(questionsJson);
+      if (activeQuestionIndex >= questions.length) {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Active question index out of bounds',
+          {
+            clientId: client.id,
+            matchId,
+            activeQuestionIndex,
+            questionsLength: questions.length,
+          },
+        );
+        return;
+      }
+
+      const currentQuestion = questions[activeQuestionIndex];
+      const correctAnswer = answers[currentQuestion.id];
+
+      // Check if answer is correct
+      if (payload.answer === correctAnswer) {
+        playerStatus.score += 1;
+        LoggerUtil.logInfo(
+          this.logger,
+          'RealtimeGateway',
+          'Correct answer submitted',
+          {
+            clientId: client.id,
+            matchId,
+            playerKey,
+            questionIndex: activeQuestionIndex,
+            submittedAnswer: payload.answer,
+            correctAnswer,
+            newScore: playerStatus.score,
+          },
+        );
+      } else {
+        LoggerUtil.logInfo(
+          this.logger,
+          'RealtimeGateway',
+          'Incorrect answer submitted',
+          {
+            clientId: client.id,
+            matchId,
+            playerKey,
+            questionIndex: activeQuestionIndex,
+            submittedAnswer: payload.answer,
+            correctAnswer,
+            currentScore: playerStatus.score,
+          },
+        );
+      }
+
+      // Move to next question
+      playerStatus.activeQuestionIndex += 1;
+
+      // Store updated player status back to Redis
+      await redisClient.set(
+        `${matchId}:${playerKey}Status`,
+        JSON.stringify(playerStatus),
+      );
+
+      // Get both players' statuses for broadcasting
+      const playerAStatusJson = await redisClient.get(
+        `${matchId}:playerAStatus`,
+      );
+      const playerBStatusJson = await redisClient.get(
+        `${matchId}:playerBStatus`,
+      );
+
+      const playerAStatus = playerAStatusJson
+        ? JSON.parse(playerAStatusJson)
+        : null;
+      const playerBStatus = playerBStatusJson
+        ? JSON.parse(playerBStatusJson)
+        : null;
+
+      // Determine next question
+      const nextQuestionIndex = playerStatus.activeQuestionIndex;
+
+      // Broadcast updated game state to all players in the match room
+      const gameStatePayload = {
+        matchId,
+        playerA: {
+          score: playerAStatus?.score || 0,
+          activeQuestionIndex: playerAStatus?.activeQuestionIndex || 0,
+          timer: playerAStatus?.timer || 0,
+        },
+        playerB: {
+          score: playerBStatus?.score || 0,
+          activeQuestionIndex: playerBStatus?.activeQuestionIndex || 0,
+          timer: playerBStatus?.timer || 0,
+        },
+        isMatchComplete: nextQuestionIndex >= questions.length,
+        totalQuestions: questions.length,
+      };
+
+      this.server.to(matchId).emit('match:stateUpdate', gameStatePayload);
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        `Broadcasted game state update for match ${matchId}`,
+        {
+          matchId,
+          gameStatePayload,
+          playersInRoom: [playerASocketId, playerBSocketId],
+        },
+      );
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        `Updated ${playerKey} status in match ${matchId}`,
+        {
+          clientId: client.id,
+          userId: client.data.user?.userId,
+          matchId,
+          playerKey,
+          updatedStatus: playerStatus,
+          timer: payload.timer,
+        },
+      );
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeGateway',
+        'Error processing submitted answer',
+        {
+          error,
+          clientId: client.id,
+          userId: client.data.user?.userId,
+          payload,
+        },
+      );
+    }
+  }
+
   /**
    * Send a notification to a specific user's private room
    */

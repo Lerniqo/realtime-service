@@ -13,6 +13,7 @@ describe('RealtimeGateway', () => {
   let roomsService: RealtimeRoomsService;
   let connectionService: ConnectionService;
   let matchmakingService: MatchmakingService;
+  let redisService: RedisService;
 
   const mockSocket = {
     id: 'test-socket-id',
@@ -62,6 +63,7 @@ describe('RealtimeGateway', () => {
             leaveRoom: jest.fn().mockResolvedValue(undefined),
             removeSocketFromAllRooms: jest.fn().mockResolvedValue(undefined),
             emitToRoom: jest.fn().mockResolvedValue(undefined),
+            getSocketRooms: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -80,6 +82,8 @@ describe('RealtimeGateway', () => {
               subscribe: jest.fn(),
               on: jest.fn(),
               removeAllListeners: jest.fn(),
+              get: jest.fn(),
+              set: jest.fn(),
             }),
             waitUntilReady: jest.fn().mockResolvedValue(undefined),
           },
@@ -98,6 +102,7 @@ describe('RealtimeGateway', () => {
     roomsService = module.get<RealtimeRoomsService>(RealtimeRoomsService);
     connectionService = module.get<ConnectionService>(ConnectionService);
     matchmakingService = module.get<MatchmakingService>(MatchmakingService);
+    redisService = module.get<RedisService>(RedisService);
 
     // Mock the server property
     gateway.server = {
@@ -331,7 +336,7 @@ describe('RealtimeGateway', () => {
     };
 
     it('should successfully add user to matchmaking queue with correct game type', async () => {
-      const payload = { gameType: '1v1_rapid_quiz' };
+      const payload = { userId: 'user1', gameType: '1v1_rapid_quiz' };
 
       jest.spyOn(matchmakingService, 'addToMatchingQueue').mockResolvedValue();
 
@@ -339,12 +344,13 @@ describe('RealtimeGateway', () => {
 
       expect(matchmakingService.addToMatchingQueue).toHaveBeenCalledWith(
         'socket-1',
+        'user1',
         '1v1_rapid_quiz',
       );
     });
 
     it('should handle error when user tries to join with incorrect game type', async () => {
-      const payload = { gameType: 'invalid_game_type' };
+      const payload = { userId: 'user1', gameType: 'invalid_game_type' };
 
       jest
         .spyOn(matchmakingService, 'addToMatchingQueue')
@@ -357,6 +363,7 @@ describe('RealtimeGateway', () => {
 
       expect(matchmakingService.addToMatchingQueue).toHaveBeenCalledWith(
         'socket-1',
+        'user1',
         'invalid_game_type',
       );
 
@@ -365,7 +372,7 @@ describe('RealtimeGateway', () => {
     });
 
     it('should handle multiple users trying to join matchmaking queue', async () => {
-      const payload = { gameType: '1v1_rapid_quiz' };
+      const payload = { userId: 'user1', gameType: '1v1_rapid_quiz' };
 
       jest.spyOn(matchmakingService, 'addToMatchingQueue').mockResolvedValue();
 
@@ -373,28 +380,31 @@ describe('RealtimeGateway', () => {
       await gateway.onJoinMatchmakingQueue(mockSocket1 as any, payload);
 
       // Second user joins queue
-      await gateway.onJoinMatchmakingQueue(mockSocket2 as any, payload);
+      const payload2 = { userId: 'user2', gameType: '1v1_rapid_quiz' };
+      await gateway.onJoinMatchmakingQueue(mockSocket2 as any, payload2);
 
       expect(matchmakingService.addToMatchingQueue).toHaveBeenCalledTimes(2);
       expect(matchmakingService.addToMatchingQueue).toHaveBeenNthCalledWith(
         1,
         'socket-1',
+        'user1',
         '1v1_rapid_quiz',
       );
       expect(matchmakingService.addToMatchingQueue).toHaveBeenNthCalledWith(
         2,
         'socket-2',
+        'user2',
         '1v1_rapid_quiz',
       );
     });
 
     it('should handle mixed scenario - one user with correct type, one with incorrect type', async () => {
-      const correctPayload = { gameType: '1v1_rapid_quiz' };
-      const incorrectPayload = { gameType: 'invalid_type' };
+      const correctPayload = { userId: 'user1', gameType: '1v1_rapid_quiz' };
+      const incorrectPayload = { userId: 'user2', gameType: 'invalid_type' };
 
       jest
         .spyOn(matchmakingService, 'addToMatchingQueue')
-        .mockImplementation((clientId, gameType) => {
+        .mockImplementation((clientId, userId, gameType) => {
           if (gameType === '1v1_rapid_quiz') {
             return Promise.resolve();
           } else {
@@ -418,11 +428,13 @@ describe('RealtimeGateway', () => {
       expect(matchmakingService.addToMatchingQueue).toHaveBeenNthCalledWith(
         1,
         'socket-1',
+        'user1',
         '1v1_rapid_quiz',
       );
       expect(matchmakingService.addToMatchingQueue).toHaveBeenNthCalledWith(
         2,
         'socket-2',
+        'user2',
         'invalid_type',
       );
 
@@ -435,6 +447,12 @@ describe('RealtimeGateway', () => {
     const matchId = 'match:123456-abc789';
     const clientAId = 'socket-client-a';
     const clientBId = 'socket-client-b';
+    const userAId = 'user-a-123';
+    const userBId = 'user-b-456';
+    const mockQuestions = [
+      { id: 1, question: 'Test Question 1', options: ['A', 'B', 'C'] },
+      { id: 2, question: 'Test Question 2', options: ['A', 'B', 'C'] },
+    ];
 
     beforeEach(() => {
       // Reset server mock
@@ -451,7 +469,14 @@ describe('RealtimeGateway', () => {
         emit: mockEmit,
       });
 
-      gateway.notifyMatchFound(matchId, clientAId, clientBId);
+      gateway.notifyMatchFound(
+        matchId,
+        clientAId,
+        clientBId,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
 
       // Verify that server.to was called for both clients
       expect(gateway.server.to).toHaveBeenCalledTimes(2);
@@ -462,11 +487,15 @@ describe('RealtimeGateway', () => {
       expect(mockEmit).toHaveBeenCalledTimes(2);
       expect(mockEmit).toHaveBeenNthCalledWith(1, 'match:found', {
         matchId,
+        questions: mockQuestions,
         opponentClientId: clientBId,
+        opponentUserId: userBId,
       });
       expect(mockEmit).toHaveBeenNthCalledWith(2, 'match:found', {
         matchId,
+        questions: mockQuestions,
         opponentClientId: clientAId,
+        opponentUserId: userAId,
       });
     });
 
@@ -476,7 +505,14 @@ describe('RealtimeGateway', () => {
         emit: mockEmit,
       });
 
-      gateway.notifyMatchFound('', clientAId, clientBId);
+      gateway.notifyMatchFound(
+        '',
+        clientAId,
+        clientBId,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
 
       // Should not attempt to send notifications with invalid parameters
       expect(gateway.server.to).not.toHaveBeenCalled();
@@ -489,7 +525,14 @@ describe('RealtimeGateway', () => {
         emit: mockEmit,
       });
 
-      gateway.notifyMatchFound(matchId, '', clientBId);
+      gateway.notifyMatchFound(
+        matchId,
+        '',
+        clientBId,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
 
       // Should not attempt to send notifications with invalid parameters
       expect(gateway.server.to).not.toHaveBeenCalled();
@@ -502,7 +545,14 @@ describe('RealtimeGateway', () => {
         emit: mockEmit,
       });
 
-      gateway.notifyMatchFound(matchId, clientAId, '');
+      gateway.notifyMatchFound(
+        matchId,
+        clientAId,
+        '',
+        userAId,
+        userBId,
+        mockQuestions,
+      );
 
       // Should not attempt to send notifications with invalid parameters
       expect(gateway.server.to).not.toHaveBeenCalled();
@@ -516,14 +566,56 @@ describe('RealtimeGateway', () => {
       });
 
       // Test with null values
-      gateway.notifyMatchFound(null as any, clientAId, clientBId);
-      gateway.notifyMatchFound(matchId, null as any, clientBId);
-      gateway.notifyMatchFound(matchId, clientAId, null as any);
+      gateway.notifyMatchFound(
+        null as any,
+        clientAId,
+        clientBId,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
+      gateway.notifyMatchFound(
+        matchId,
+        null as any,
+        clientBId,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
+      gateway.notifyMatchFound(
+        matchId,
+        clientAId,
+        null as any,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
 
       // Test with undefined values
-      gateway.notifyMatchFound(undefined as any, clientAId, clientBId);
-      gateway.notifyMatchFound(matchId, undefined as any, clientBId);
-      gateway.notifyMatchFound(matchId, clientAId, undefined as any);
+      gateway.notifyMatchFound(
+        undefined as any,
+        clientAId,
+        clientBId,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
+      gateway.notifyMatchFound(
+        matchId,
+        undefined as any,
+        clientBId,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
+      gateway.notifyMatchFound(
+        matchId,
+        clientAId,
+        undefined as any,
+        userAId,
+        userBId,
+        mockQuestions,
+      );
 
       // Should not attempt to send notifications with invalid parameters
       expect(gateway.server.to).not.toHaveBeenCalled();
@@ -536,7 +628,14 @@ describe('RealtimeGateway', () => {
 
       // Should not throw error when server is unavailable
       expect(() => {
-        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+        gateway.notifyMatchFound(
+          matchId,
+          clientAId,
+          clientBId,
+          userAId,
+          userBId,
+          mockQuestions,
+        );
       }).not.toThrow();
     });
 
@@ -546,7 +645,14 @@ describe('RealtimeGateway', () => {
 
       // Should not throw error when server is undefined
       expect(() => {
-        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+        gateway.notifyMatchFound(
+          matchId,
+          clientAId,
+          clientBId,
+          userAId,
+          userBId,
+          mockQuestions,
+        );
       }).not.toThrow();
     });
 
@@ -566,7 +672,14 @@ describe('RealtimeGateway', () => {
 
       // Should not throw error even if one client emission fails
       expect(() => {
-        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+        gateway.notifyMatchFound(
+          matchId,
+          clientAId,
+          clientBId,
+          userAId,
+          userBId,
+          mockQuestions,
+        );
       }).not.toThrow();
 
       // Verify both clients were attempted
@@ -577,13 +690,17 @@ describe('RealtimeGateway', () => {
       // Verify client A emission was attempted and failed
       expect(mockEmitA).toHaveBeenCalledWith('match:found', {
         matchId,
+        questions: mockQuestions,
         opponentClientId: clientBId,
+        opponentUserId: userBId,
       });
 
       // Verify client B emission succeeded
       expect(mockEmitB).toHaveBeenCalledWith('match:found', {
         matchId,
+        questions: mockQuestions,
         opponentClientId: clientAId,
+        opponentUserId: userAId,
       });
     });
 
@@ -603,7 +720,14 @@ describe('RealtimeGateway', () => {
 
       // Should not throw error even if one client emission fails
       expect(() => {
-        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+        gateway.notifyMatchFound(
+          matchId,
+          clientAId,
+          clientBId,
+          userAId,
+          userBId,
+          mockQuestions,
+        );
       }).not.toThrow();
 
       // Verify both clients were attempted
@@ -612,13 +736,17 @@ describe('RealtimeGateway', () => {
       // Verify client A emission succeeded
       expect(mockEmitA).toHaveBeenCalledWith('match:found', {
         matchId,
+        questions: mockQuestions,
         opponentClientId: clientBId,
+        opponentUserId: userBId,
       });
 
       // Verify client B emission was attempted and failed
       expect(mockEmitB).toHaveBeenCalledWith('match:found', {
         matchId,
+        questions: mockQuestions,
         opponentClientId: clientAId,
+        opponentUserId: userAId,
       });
     });
 
@@ -640,7 +768,14 @@ describe('RealtimeGateway', () => {
 
       // Should not throw error even if both client emissions fail
       expect(() => {
-        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+        gateway.notifyMatchFound(
+          matchId,
+          clientAId,
+          clientBId,
+          userAId,
+          userBId,
+          mockQuestions,
+        );
       }).not.toThrow();
 
       // Verify both clients were attempted
@@ -656,7 +791,14 @@ describe('RealtimeGateway', () => {
 
       // Should not throw error even if server.to fails
       expect(() => {
-        gateway.notifyMatchFound(matchId, clientAId, clientBId);
+        gateway.notifyMatchFound(
+          matchId,
+          clientAId,
+          clientBId,
+          userAId,
+          userBId,
+          mockQuestions,
+        );
       }).not.toThrow();
 
       // Verify server.to was attempted
@@ -677,11 +819,20 @@ describe('RealtimeGateway', () => {
       });
 
       differentMatchIds.forEach((testMatchId) => {
-        gateway.notifyMatchFound(testMatchId, clientAId, clientBId);
+        gateway.notifyMatchFound(
+          testMatchId,
+          clientAId,
+          clientBId,
+          userAId,
+          userBId,
+          mockQuestions,
+        );
 
         expect(mockEmit).toHaveBeenCalledWith('match:found', {
           matchId: testMatchId,
+          questions: mockQuestions,
           opponentClientId: expect.any(String),
+          opponentUserId: expect.any(String),
         });
       });
 
@@ -702,13 +853,468 @@ describe('RealtimeGateway', () => {
       });
 
       clientPairs.forEach(([clientA, clientB]) => {
-        gateway.notifyMatchFound(matchId, clientA, clientB);
+        gateway.notifyMatchFound(
+          matchId,
+          clientA,
+          clientB,
+          userAId,
+          userBId,
+          mockQuestions,
+        );
 
         expect(gateway.server.to).toHaveBeenCalledWith(clientA);
         expect(gateway.server.to).toHaveBeenCalledWith(clientB);
       });
 
       expect(gateway.server.to).toHaveBeenCalledTimes(clientPairs.length * 2);
+    });
+  });
+
+  describe('onSubmitAnswer', () => {
+    const mockMatchSocket = {
+      id: 'player-socket-id',
+      data: {
+        user: {
+          userId: 'user123',
+          role: 'user',
+          email: 'test@example.com',
+        },
+      },
+    };
+
+    const matchId = 'match:1234567890-abcdef';
+    const mockPayload = {
+      answer: 'A',
+      timer: 15,
+    };
+
+    let mockRedisClient: any;
+
+    beforeEach(() => {
+      mockRedisClient = {
+        get: jest.fn(),
+        set: jest.fn(),
+      };
+
+      (redisService.getClient as jest.Mock).mockReturnValue(mockRedisClient);
+      (roomsService.getSocketRooms as jest.Mock).mockResolvedValue([
+        matchId,
+        'user:user123',
+      ]);
+
+      // Mock server.to for state updates
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: jest.fn(),
+      });
+    });
+
+    it('should successfully process correct answer for player A', async () => {
+      // Setup Redis responses
+      mockRedisClient.get
+        .mockResolvedValueOnce('player-socket-id') // playerASocketId
+        .mockResolvedValueOnce('other-socket-id') // playerBSocketId
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 2,
+            activeQuestionIndex: 1,
+            timer: 20,
+          }),
+        ) // playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            1: 'A',
+            2: 'B',
+            3: 'C',
+          }),
+        ) // answers
+        .mockResolvedValueOnce(
+          JSON.stringify([
+            { id: 1, question: 'Question 1', options: ['A', 'B', 'C'] },
+            { id: 2, question: 'Question 2', options: ['A', 'B', 'C'] },
+            { id: 3, question: 'Question 3', options: ['A', 'B', 'C'] },
+          ]),
+        ) // questions
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 3,
+            activeQuestionIndex: 2,
+            timer: 15,
+          }),
+        ) // updated playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 1,
+            activeQuestionIndex: 1,
+            timer: 25,
+          }),
+        ); // playerBStatus
+
+      const correctAnswerPayload = {
+        answer: 'B', // Correct answer for question ID 2 (activeQuestionIndex 1)
+        timer: 15,
+      };
+
+      await gateway.onSubmitAnswer(
+        mockMatchSocket as any,
+        correctAnswerPayload,
+      );
+
+      // Verify Redis operations
+      expect(mockRedisClient.get).toHaveBeenCalledWith(
+        `${matchId}:playerASocketId`,
+      );
+      expect(mockRedisClient.get).toHaveBeenCalledWith(
+        `${matchId}:playerBSocketId`,
+      );
+      expect(mockRedisClient.get).toHaveBeenCalledWith(
+        `${matchId}:playerAStatus`,
+      );
+      expect(mockRedisClient.get).toHaveBeenCalledWith(`${matchId}:answers`);
+      expect(mockRedisClient.get).toHaveBeenCalledWith(`${matchId}:questions`);
+
+      // Verify player status update
+      expect(mockRedisClient.set).toHaveBeenCalledWith(
+        `${matchId}:playerAStatus`,
+        JSON.stringify({
+          score: 3, // Incremented from 2 to 3 (correct answer)
+          activeQuestionIndex: 2, // Incremented from 1 to 2
+          timer: 15, // Updated from payload
+        }),
+      );
+
+      // Verify state update broadcast
+      expect(gateway.server.to).toHaveBeenCalledWith(matchId);
+    });
+
+    it('should successfully process incorrect answer for player B', async () => {
+      const playerBSocket = {
+        ...mockMatchSocket,
+        id: 'player-b-socket-id',
+      };
+
+      // Setup Redis responses for player B
+      mockRedisClient.get
+        .mockResolvedValueOnce('other-socket-id') // playerASocketId
+        .mockResolvedValueOnce('player-b-socket-id') // playerBSocketId
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 1,
+            activeQuestionIndex: 0,
+            timer: 30,
+          }),
+        ) // playerBStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            1: 'A',
+            2: 'B',
+            3: 'C',
+          }),
+        ) // answers
+        .mockResolvedValueOnce(
+          JSON.stringify([
+            { id: 1, question: 'Question 1', options: ['A', 'B', 'C'] },
+            { id: 2, question: 'Question 2', options: ['A', 'B', 'C'] },
+          ]),
+        ) // questions
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 2,
+            activeQuestionIndex: 1,
+            timer: 15,
+          }),
+        ) // playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 1, // No increment (incorrect answer)
+            activeQuestionIndex: 1, // Incremented from 0 to 1
+            timer: 10, // Updated from payload
+          }),
+        ); // updated playerBStatus
+
+      const incorrectPayload = {
+        answer: 'B', // Incorrect answer (correct is 'A')
+        timer: 10,
+      };
+
+      await gateway.onSubmitAnswer(playerBSocket as any, incorrectPayload);
+
+      // Verify player B status update
+      expect(mockRedisClient.set).toHaveBeenCalledWith(
+        `${matchId}:playerBStatus`,
+        JSON.stringify({
+          score: 1, // No increment (incorrect answer)
+          activeQuestionIndex: 1, // Incremented from 0 to 1
+          timer: 10, // Updated from payload
+        }),
+      );
+
+      // Verify state update broadcast
+      expect(gateway.server.to).toHaveBeenCalledWith(matchId);
+    });
+
+    it('should handle no match room found', async () => {
+      (roomsService.getSocketRooms as jest.Mock).mockResolvedValue([
+        'user:user123',
+        'general-room',
+      ]);
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, mockPayload);
+
+      // Should not call Redis operations
+      expect(mockRedisClient.get).not.toHaveBeenCalled();
+      expect(mockRedisClient.set).not.toHaveBeenCalled();
+      expect(gateway.server.to).not.toHaveBeenCalled();
+    });
+
+    it('should handle invalid player (socket not in match)', async () => {
+      // Setup Redis responses
+      mockRedisClient.get
+        .mockResolvedValueOnce('different-socket-id') // playerASocketId
+        .mockResolvedValueOnce('another-socket-id'); // playerBSocketId
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, mockPayload);
+
+      // Should not proceed with status update
+      expect(mockRedisClient.set).not.toHaveBeenCalled();
+      expect(gateway.server.to).not.toHaveBeenCalled();
+    });
+
+    it('should handle missing player status in Redis', async () => {
+      // Setup Redis responses
+      mockRedisClient.get
+        .mockResolvedValueOnce('player-socket-id') // playerASocketId
+        .mockResolvedValueOnce('other-socket-id') // playerBSocketId
+        .mockResolvedValueOnce(null); // playerAStatus (missing)
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, mockPayload);
+
+      // Should not proceed with status update
+      expect(mockRedisClient.set).not.toHaveBeenCalled();
+      expect(gateway.server.to).not.toHaveBeenCalled();
+    });
+
+    it('should handle missing answers in Redis', async () => {
+      // Setup Redis responses
+      mockRedisClient.get
+        .mockResolvedValueOnce('player-socket-id') // playerASocketId
+        .mockResolvedValueOnce('other-socket-id') // playerBSocketId
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 0,
+            activeQuestionIndex: 0,
+            timer: 30,
+          }),
+        ) // playerAStatus
+        .mockResolvedValueOnce(null); // answers (missing)
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, mockPayload);
+
+      // Should not proceed with status update
+      expect(mockRedisClient.set).not.toHaveBeenCalled();
+      expect(gateway.server.to).not.toHaveBeenCalled();
+    });
+
+    it('should handle missing questions in Redis', async () => {
+      // Setup Redis responses
+      mockRedisClient.get
+        .mockResolvedValueOnce('player-socket-id') // playerASocketId
+        .mockResolvedValueOnce('other-socket-id') // playerBSocketId
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 0,
+            activeQuestionIndex: 0,
+            timer: 30,
+          }),
+        ) // playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            1: 'A',
+            2: 'B',
+          }),
+        ) // answers
+        .mockResolvedValueOnce(null); // questions (missing)
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, mockPayload);
+
+      // Should not proceed with status update
+      expect(mockRedisClient.set).not.toHaveBeenCalled();
+      expect(gateway.server.to).not.toHaveBeenCalled();
+    });
+
+    it('should handle question index out of bounds', async () => {
+      // Setup Redis responses
+      mockRedisClient.get
+        .mockResolvedValueOnce('player-socket-id') // playerASocketId
+        .mockResolvedValueOnce('other-socket-id') // playerBSocketId
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 5,
+            activeQuestionIndex: 10, // Out of bounds
+            timer: 0,
+          }),
+        ) // playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            1: 'A',
+            2: 'B',
+          }),
+        ) // answers
+        .mockResolvedValueOnce(
+          JSON.stringify([
+            { id: 1, question: 'Question 1', options: ['A', 'B'] },
+            { id: 2, question: 'Question 2', options: ['A', 'B'] },
+          ]),
+        ); // questions (only 2 questions, but activeQuestionIndex is 10)
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, mockPayload);
+
+      // Should not proceed with status update
+      expect(mockRedisClient.set).not.toHaveBeenCalled();
+      expect(gateway.server.to).not.toHaveBeenCalled();
+    });
+
+    it('should handle Redis errors gracefully', async () => {
+      mockRedisClient.get.mockRejectedValue(
+        new Error('Redis connection error'),
+      );
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, mockPayload);
+
+      // Should not proceed with status update
+      expect(mockRedisClient.set).not.toHaveBeenCalled();
+      expect(gateway.server.to).not.toHaveBeenCalled();
+    });
+
+    it('should broadcast game state with match completion flag', async () => {
+      // Setup for last question (match completion)
+      mockRedisClient.get
+        .mockResolvedValueOnce('player-socket-id') // playerASocketId
+        .mockResolvedValueOnce('other-socket-id') // playerBSocketId
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 4,
+            activeQuestionIndex: 4, // Last question (index 4 of 5 questions)
+            timer: 5,
+          }),
+        ) // playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            1: 'A',
+            2: 'B',
+            3: 'C',
+            4: 'D',
+            5: 'A',
+          }),
+        ) // answers
+        .mockResolvedValueOnce(
+          JSON.stringify([
+            { id: 1, question: 'Q1', options: ['A', 'B'] },
+            { id: 2, question: 'Q2', options: ['A', 'B'] },
+            { id: 3, question: 'Q3', options: ['A', 'B'] },
+            { id: 4, question: 'Q4', options: ['A', 'B'] },
+            { id: 5, question: 'Q5', options: ['A', 'B'] },
+          ]),
+        ) // questions (5 total)
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 5, // Updated score
+            activeQuestionIndex: 5, // Beyond last question
+            timer: 5,
+          }),
+        ) // updated playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 3,
+            activeQuestionIndex: 4,
+            timer: 10,
+          }),
+        ); // playerBStatus
+
+      const finalAnswerPayload = {
+        answer: 'A', // Correct answer for question 5
+        timer: 5,
+      };
+
+      const mockEmit = jest.fn();
+      gateway.server.to = jest.fn().mockReturnValue({
+        emit: mockEmit,
+      });
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, finalAnswerPayload);
+
+      // Verify state update includes match completion
+      expect(mockEmit).toHaveBeenCalledWith('match:stateUpdate', {
+        matchId,
+        playerA: {
+          score: 5,
+          activeQuestionIndex: 5,
+          timer: 5,
+        },
+        playerB: {
+          score: 3,
+          activeQuestionIndex: 4,
+          timer: 10,
+        },
+        isMatchComplete: true, // Should be true since activeQuestionIndex (5) >= questions.length (5)
+        totalQuestions: 5,
+      });
+    });
+
+    it('should update timer correctly for both players', async () => {
+      // Setup Redis responses
+      mockRedisClient.get
+        .mockResolvedValueOnce('player-socket-id') // playerASocketId
+        .mockResolvedValueOnce('other-socket-id') // playerBSocketId
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 1,
+            activeQuestionIndex: 1,
+            timer: 30, // Original timer
+          }),
+        ) // playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            1: 'B',
+            2: 'A',
+          }),
+        ) // answers
+        .mockResolvedValueOnce(
+          JSON.stringify([
+            { id: 1, question: 'Question 1', options: ['A', 'B'] },
+            { id: 2, question: 'Question 2', options: ['A', 'B'] },
+          ]),
+        ) // questions
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 2, // Updated score
+            activeQuestionIndex: 2, // Updated index
+            timer: 7, // Updated timer from payload
+          }),
+        ) // updated playerAStatus
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            score: 0,
+            activeQuestionIndex: 0,
+            timer: 25,
+          }),
+        ); // playerBStatus
+
+      const timerTestPayload = {
+        answer: 'A',
+        timer: 7, // Specific timer value
+      };
+
+      await gateway.onSubmitAnswer(mockMatchSocket as any, timerTestPayload);
+
+      // Verify timer was updated correctly in player status
+      expect(mockRedisClient.set).toHaveBeenCalledWith(
+        `${matchId}:playerAStatus`,
+        JSON.stringify({
+          score: 2,
+          activeQuestionIndex: 2,
+          timer: 7, // Should be updated to payload timer
+        }),
+      );
     });
   });
 });

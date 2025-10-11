@@ -6,6 +6,7 @@ import { RealtimeGateway } from '../gateway/realtime.gateway';
 import { PinoLogger } from 'nestjs-pino';
 import { GameType } from './dto/game-type.enum';
 import { Socket } from 'socket.io';
+import { ContentService } from 'src/content/content.service';
 
 // Mock LoggerUtil to capture the calls
 jest.mock('src/common/utils/logger.util', () => ({
@@ -23,6 +24,7 @@ describe('MatchmakingWorker', () => {
   let roomsService: RealtimeRoomsService;
   let gateway: RealtimeGateway;
   let logger: PinoLogger;
+  let contentService: ContentService;
   let mockRedisClient: any;
   let mockSocket1: Partial<Socket>;
   let mockSocket2: Partial<Socket>;
@@ -35,6 +37,7 @@ describe('MatchmakingWorker', () => {
     mockRedisClient = {
       lrange: jest.fn(),
       lrem: jest.fn(),
+      set: jest.fn(),
     };
 
     // Create mock sockets
@@ -68,7 +71,25 @@ describe('MatchmakingWorker', () => {
           ]),
         },
       },
-      notifyMatchFound: jest.fn(), // Add the missing notifyMatchFound method
+      notifyMatchFound: jest.fn(),
+    };
+
+    const mockContentService = {
+      getMatchQuestions: jest.fn().mockResolvedValue({
+        questions: [
+          {
+            id: 1,
+            question: 'What is 2+2?',
+            options: ['3', '4', '5', '6'],
+          },
+          {
+            id: 2,
+            question: 'What is the capital of France?',
+            options: ['London', 'Berlin', 'Paris', 'Madrid'],
+          },
+        ],
+        answers: ['4', 'Paris'],
+      }),
     };
 
     const mockLogger = {
@@ -95,6 +116,10 @@ describe('MatchmakingWorker', () => {
           provide: PinoLogger,
           useValue: mockLogger,
         },
+        {
+          provide: ContentService,
+          useValue: mockContentService,
+        },
       ],
     }).compile();
 
@@ -103,6 +128,7 @@ describe('MatchmakingWorker', () => {
     roomsService = module.get<RealtimeRoomsService>(RealtimeRoomsService);
     gateway = module.get<RealtimeGateway>(RealtimeGateway);
     logger = module.get<PinoLogger>(PinoLogger);
+    contentService = module.get<ContentService>(ContentService);
   });
 
   afterEach(() => {
@@ -131,9 +157,9 @@ describe('MatchmakingWorker', () => {
 
     it('should create match when queue has 2 or more clients', async () => {
       mockRedisClient.lrange.mockResolvedValue([
-        'client1',
-        'client2',
-        'client3',
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'client2', userId: 'user2' }),
+        JSON.stringify({ clientId: 'client3', userId: 'user3' }),
       ]);
 
       await worker.handleMatchmaking();
@@ -148,18 +174,21 @@ describe('MatchmakingWorker', () => {
         1,
         `matchmaking:queue:${GameType.ONE_V_ONE_RAPID_QUIZ}`,
         1,
-        'client1',
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
       );
       expect(mockRedisClient.lrem).toHaveBeenNthCalledWith(
         2,
         `matchmaking:queue:${GameType.ONE_V_ONE_RAPID_QUIZ}`,
         1,
-        'client2',
+        JSON.stringify({ clientId: 'client2', userId: 'user2' }),
       );
     });
 
     it('should join both players to match room when sockets are found', async () => {
-      mockRedisClient.lrange.mockResolvedValue(['client1', 'client2']);
+      mockRedisClient.lrange.mockResolvedValue([
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'client2', userId: 'user2' }),
+      ]);
 
       await worker.handleMatchmaking();
 
@@ -176,8 +205,8 @@ describe('MatchmakingWorker', () => {
 
     it('should handle missing sockets gracefully', async () => {
       mockRedisClient.lrange.mockResolvedValue([
-        'nonexistent1',
-        'nonexistent2',
+        JSON.stringify({ clientId: 'nonexistent1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'nonexistent2', userId: 'user2' }),
       ]);
 
       await worker.handleMatchmaking();
@@ -188,7 +217,10 @@ describe('MatchmakingWorker', () => {
     });
 
     it('should handle partial missing sockets', async () => {
-      mockRedisClient.lrange.mockResolvedValue(['client1', 'nonexistent']);
+      mockRedisClient.lrange.mockResolvedValue([
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'nonexistent', userId: 'user2' }),
+      ]);
 
       await worker.handleMatchmaking();
 
@@ -201,7 +233,10 @@ describe('MatchmakingWorker', () => {
 
     it('should generate unique match IDs', async () => {
       // Setup the queue to have clients
-      mockRedisClient.lrange.mockResolvedValue(['client1', 'client2']);
+      mockRedisClient.lrange.mockResolvedValue([
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'client2', userId: 'user2' }),
+      ]);
 
       // Mock the random number generation to be predictable
       jest.spyOn(Math, 'random').mockReturnValue(0.123456789);
@@ -223,7 +258,10 @@ describe('MatchmakingWorker', () => {
     });
 
     it('should log match creation with correct details', async () => {
-      mockRedisClient.lrange.mockResolvedValue(['client1', 'client2']);
+      mockRedisClient.lrange.mockResolvedValue([
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'client2', userId: 'user2' }),
+      ]);
 
       await worker.handleMatchmaking();
 
@@ -258,7 +296,10 @@ describe('MatchmakingWorker', () => {
     });
 
     it('should handle room service errors gracefully', async () => {
-      mockRedisClient.lrange.mockResolvedValue(['client1', 'client2']);
+      mockRedisClient.lrange.mockResolvedValue([
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'client2', userId: 'user2' }),
+      ]);
       const roomError = new Error('Room service failed');
       (roomsService.joinRoom as jest.Mock).mockRejectedValue(roomError);
 
@@ -288,7 +329,10 @@ describe('MatchmakingWorker', () => {
 
     it('should process multiple matches in different queues', async () => {
       // If we had multiple game types, we could test this
-      mockRedisClient.lrange.mockResolvedValue(['client1', 'client2']);
+      mockRedisClient.lrange.mockResolvedValue([
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'client2', userId: 'user2' }),
+      ]);
 
       await worker.handleMatchmaking();
 
@@ -297,7 +341,10 @@ describe('MatchmakingWorker', () => {
     });
 
     it('should call notifyMatchFound when match is created', async () => {
-      mockRedisClient.lrange.mockResolvedValue(['client1', 'client2']);
+      mockRedisClient.lrange.mockResolvedValue([
+        JSON.stringify({ clientId: 'client1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'client2', userId: 'user2' }),
+      ]);
 
       await worker.handleMatchmaking();
 
@@ -306,13 +353,22 @@ describe('MatchmakingWorker', () => {
         expect.stringMatching(/^match:\d+-[a-z0-9]+$/),
         'client1',
         'client2',
+        'user1',
+        'user2',
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.any(Number),
+            question: expect.any(String),
+            options: expect.any(Array),
+          }),
+        ]),
       );
     });
 
     it('should call notifyMatchFound even when sockets are missing', async () => {
       mockRedisClient.lrange.mockResolvedValue([
-        'nonexistent1',
-        'nonexistent2',
+        JSON.stringify({ clientId: 'nonexistent1', userId: 'user1' }),
+        JSON.stringify({ clientId: 'nonexistent2', userId: 'user2' }),
       ]);
 
       await worker.handleMatchmaking();
@@ -322,6 +378,15 @@ describe('MatchmakingWorker', () => {
         expect.stringMatching(/^match:\d+-[a-z0-9]+$/),
         'nonexistent1',
         'nonexistent2',
+        'user1',
+        'user2',
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.any(Number),
+            question: expect.any(String),
+            options: expect.any(Array),
+          }),
+        ]),
       );
     });
   });

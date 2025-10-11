@@ -128,7 +128,7 @@ export class MatchmakingWorker {
         options: q.options,
       }));
       await redisClient.set(
-        `match:${matchId}:questions`,
+        `${matchId}:questions`,
         JSON.stringify(questionsOnly),
       );
 
@@ -138,18 +138,34 @@ export class MatchmakingWorker {
         answersObject[q.id] = matchContent.answers[index];
       });
       await redisClient.set(
-        `match:${matchId}:answers`,
+        `${matchId}:answers`,
         JSON.stringify(answersObject),
       );
 
       // Store player socket IDs
       await redisClient.set(
-        `match:${matchId}:playerASocketId`,
+        `${matchId}:playerASocketId`,
         playerASocketId,
       );
       await redisClient.set(
-        `match:${matchId}:playerBSocketId`,
+        `${matchId}:playerBSocketId`,
         playerBSocketId,
+      );
+
+      // Store player status data
+      const initialPlayerStatus = {
+        score: 0,
+        activeQuestionIndex: 0,
+        timer: 0,
+      };
+
+      await redisClient.set(
+        `${matchId}:playerAStatus`,
+        JSON.stringify(initialPlayerStatus),
+      );
+      await redisClient.set(
+        `${matchId}:playerBStatus`,
+        JSON.stringify(initialPlayerStatus),
       );
 
       LoggerUtil.logInfo(
@@ -161,6 +177,7 @@ export class MatchmakingWorker {
           playerASocketId,
           playerBSocketId,
           questionsCount: questionsOnly.length,
+          initialPlayerStatus,
         },
       );
     } catch (error) {
