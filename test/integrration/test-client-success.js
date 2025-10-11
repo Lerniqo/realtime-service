@@ -18,7 +18,7 @@ const token2 = jwt.sign(
     role: 'user',
     email: 'test2@example.com',
   },
-  'defaultSecret', // Use the default JWT_SECRET from server
+  'SunimalSirgeThatte', // Use the default JWT_SECRET from server
   { expiresIn: '1h' },
 );
 
@@ -41,7 +41,22 @@ socket1.on('connect', () => {
 
   // Test the matchmaking:join event for player 1
   console.log('📤 Player 1 sending matchmaking:join event...');
-  socket1.emit('matchmaking:join', { gameType: '1v1_rapid_quiz' });
+  socket1.emit('matchmaking:join', {
+    userId: 'user123',
+    gameType: '1v1_rapid_quiz',
+  });
+
+  // Wait for 3 seconds and send match:submitAnswer event
+  setTimeout(() => {
+    console.log('📤 Player 1 sending match:submitAnswer event...');
+    socket1.emit('match:submitAnswer', { answer: 'A', timer: 10 });
+
+    // Wait for another 2 seconds and send the event again
+    setTimeout(() => {
+      console.log('📤 Player 1 sending match:submitAnswer event again...');
+      socket1.emit('match:submitAnswer', { answer: 'B', timer: 8 });
+    }, 2000);
+  }, 3000);
 });
 
 socket2.on('connect', () => {
@@ -50,7 +65,22 @@ socket2.on('connect', () => {
   // Test the matchmaking:join event for player 2 (slight delay to see the effect)
   setTimeout(() => {
     console.log('📤 Player 2 sending matchmaking:join event...');
-    socket2.emit('matchmaking:join', { gameType: '1v1_rapid_quiz' });
+    socket2.emit('matchmaking:join', {
+      userId: 'user456',
+      gameType: '1v1_rapid_quiz',
+    });
+
+    // Wait for 3 seconds and send match:submitAnswer event
+    setTimeout(() => {
+      console.log('📤 Player 2 sending match:submitAnswer event...');
+      socket2.emit('match:submitAnswer', { answer: 'C', timer: 9 });
+
+      // Wait for another 2 seconds and send the event again
+      setTimeout(() => {
+        console.log('📤 Player 2 sending match:submitAnswer event again...');
+        socket2.emit('match:submitAnswer', { answer: 'D', timer: 7 });
+      }, 2000);
+    }, 3000);
   }, 1000);
 });
 
@@ -71,10 +101,10 @@ socket2.on('connect_error', (error) => {
   console.log('❌ Player 2 connection error:', error.message);
 });
 
-// Keep alive for 15 seconds to allow time for matchmaking worker to run
+// Adjust the keep-alive duration to 10 seconds after the last event
 setTimeout(() => {
   console.log('🔌 Disconnecting both players...');
   socket1.disconnect();
   socket2.disconnect();
   console.log('Disconnected both players');
-}, 15000);
+}, 10000);

@@ -9,6 +9,7 @@ import { InternalNotifyController } from './notifications/internal-notify.contro
 import { MatchmakingService } from './matchmaking/matchmaking.service';
 import { MatchmakingWorker } from './matchmaking/matchmaking.worker';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ContentModule } from 'src/content/content.module';
 
 /**
  * RealtimeModule
@@ -17,7 +18,12 @@ import { ScheduleModule } from '@nestjs/schedule';
  *  - Keep this module focused: external modules should depend only on exported services (e.g. RoomsService)
  */
 @Module({
-  imports: [AuthJwtModule, RedisModule, ScheduleModule.forRoot()],
+  imports: [
+    AuthJwtModule,
+    RedisModule,
+    ScheduleModule.forRoot(),
+    ContentModule,
+  ],
   controllers: [InternalNotifyController],
   providers: [
     RealtimeGateway,

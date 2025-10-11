@@ -7,10 +7,16 @@ import { GameType } from './dto/game-type.enum';
 export class MatchmakingService {
   constructor(private readonly redisService: RedisService) {}
 
-  async addToMatchingQueue(clientId: string, gameType: string): Promise<void> {
+  async addToMatchingQueue(
+    clientId: string,
+    userId: string,
+    gameType: string,
+  ): Promise<void> {
     if (gameType === GameType.ONE_V_ONE_RAPID_QUIZ) {
       const redisClient = this.redisService.getClient();
-      await redisClient.lpush(`matchmaking:queue:${gameType}`, clientId);
+      // Store both clientId and userId as a JSON object
+      const queueEntry = JSON.stringify({ clientId, userId });
+      await redisClient.lpush(`matchmaking:queue:${gameType}`, queueEntry);
     } else {
       throw new Error('Unsupported game type');
     }

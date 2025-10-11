@@ -12,6 +12,7 @@ import { RedisModule } from './redis/redis.module';
 import { KafkaController } from './kafka/kafka.controller';
 import { KafkaService } from './kafka/kafka.service';
 import { KafkaModule } from './kafka/kafka.module';
+import { ContentModule } from './content/content.module';
 // RoomsService is re-exported via RealtimeModule; direct import removed
 
 @Module({
@@ -48,6 +49,7 @@ import { KafkaModule } from './kafka/kafka.module';
     HealthModule,
     RedisModule,
     KafkaModule,
+    ContentModule,
   ],
   controllers: [AppController, KafkaController],
   // RoomsService now provided by RealtimeModule
