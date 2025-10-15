@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.gitignore
+Dockerfile
+docker-compose.yml
+*.log
+.vscode
+.env
+.env.*
+coverage
+npm-debug.log
+pnpm-lock.yaml
+yarn.lock
+*.local
+.idea
+.DS_Store
