@@ -25,6 +25,37 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Environment Configuration
+
+Copy `.env.example` to `.env` and configure the environment variables:
+
+```bash
+$ cp .env.example .env
+```
+
+### Socket.IO CORS Configuration
+
+The Socket.IO server's CORS settings can be configured via environment variables:
+
+- `SOCKET_CORS_ORIGIN`: Allowed origins (comma-separated or `*` for all)
+- `SOCKET_CORS_CREDENTIALS`: Allow credentials (`true`/`false`)
+- `SOCKET_CORS_METHODS`: Allowed HTTP methods (comma-separated)
+- `SOCKET_CORS_ALLOWED_HEADERS`: Allowed headers (comma-separated)
+
+**Example for development:**
+```env
+SOCKET_CORS_ORIGIN=*
+SOCKET_CORS_CREDENTIALS=true
+```
+
+**Example for production:**
+```env
+SOCKET_CORS_ORIGIN=https://yourdomain.com,https://app.yourdomain.com
+SOCKET_CORS_CREDENTIALS=true
+```
+
+📖 See [SOCKET_CORS_GUIDE.md](./SOCKET_CORS_GUIDE.md) for detailed CORS configuration instructions.
+
 ## Project setup
 
 ```bash

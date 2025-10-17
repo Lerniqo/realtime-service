@@ -17,11 +17,19 @@ import { RedisService } from 'src/redis/redis.service';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: process.env.SOCKET_CORS_ORIGIN?.split(',') || '*',
+    credentials: process.env.SOCKET_CORS_CREDENTIALS === 'true',
+    methods: process.env.SOCKET_CORS_METHODS?.split(',') || ['GET', 'POST'],
+    allowedHeaders:
+      process.env.SOCKET_CORS_ALLOWED_HEADERS?.split(',') || [
+        'Content-Type',
+        'Authorization',
+      ],
   },
 })
 export class RealtimeGateway
@@ -39,6 +47,7 @@ export class RealtimeGateway
     private readonly roomsService: RealtimeRoomsService,
     private readonly redisService: RedisService,
     private readonly matchmakingService: MatchmakingService,
+    private readonly configService: ConfigService,
   ) {}
 
   // ...existing code...
