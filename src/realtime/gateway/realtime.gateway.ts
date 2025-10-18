@@ -317,11 +317,29 @@ export class RealtimeGateway
             matchId,
             playerASocketId,
             playerBSocketId,
+            socketIdMatches: {
+              matchesPlayerA: playerASocketId === client.id,
+              matchesPlayerB: playerBSocketId === client.id,
+            },
             payload,
           },
         );
         return;
       }
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        `Identified player for answer submission`,
+        {
+          clientId: client.id,
+          userId: client.data.user?.userId,
+          matchId,
+          playerKey,
+          playerASocketId,
+          playerBSocketId,
+        },
+      );
 
       // Get current player status from Redis
       const playerStatusJson = await redisClient.get(`${matchId}:${playerKey}Status`);
@@ -602,10 +620,12 @@ export class RealtimeGateway
         questions: questions,
       };
 
-      // Send match found event to client A with opponent's ID
+      // Send match found event to client A with opponent's ID and player role
       try {
         this.server.to(clientAId).emit('match:found', {
           ...matchFoundPayload,
+          playerRole: 'playerA',
+          yourUserId: userAId,
           opponentClientId: clientBId,
           opponentUserId: userBId,
         });
@@ -617,6 +637,7 @@ export class RealtimeGateway
             matchId,
             clientId: clientAId,
             userId: userAId,
+            playerRole: 'playerA',
             opponentClientId: clientBId,
             opponentUserId: userBId,
             questionsCount: questions.length,
@@ -631,10 +652,12 @@ export class RealtimeGateway
         );
       }
 
-      // Send match found event to client B with opponent's ID
+      // Send match found event to client B with opponent's ID and player role
       try {
         this.server.to(clientBId).emit('match:found', {
           ...matchFoundPayload,
+          playerRole: 'playerB',
+          yourUserId: userBId,
           opponentClientId: clientAId,
           opponentUserId: userAId,
         });
@@ -646,6 +669,7 @@ export class RealtimeGateway
             matchId,
             clientId: clientBId,
             userId: userBId,
+            playerRole: 'playerB',
             opponentClientId: clientAId,
             opponentUserId: userAId,
             questionsCount: questions.length,

@@ -58,6 +58,8 @@ export class MatchmakingWorker {
             matchContent,
             clientId1,
             clientId2,
+            userId1,
+            userId2,
           );
 
           // Get socket objects for the client IDs
@@ -117,6 +119,8 @@ export class MatchmakingWorker {
     matchContent: any,
     playerASocketId: string,
     playerBSocketId: string,
+    playerAUserId: string,
+    playerBUserId: string,
   ) {
     const redisClient = this.redisService.getClient();
 
@@ -152,6 +156,16 @@ export class MatchmakingWorker {
         playerBSocketId,
       );
 
+      // Store player user IDs for reference
+      await redisClient.set(
+        `${matchId}:playerAUserId`,
+        playerAUserId,
+      );
+      await redisClient.set(
+        `${matchId}:playerBUserId`,
+        playerBUserId,
+      );
+
       // Store player status data
       const initialPlayerStatus = {
         score: 0,
@@ -176,6 +190,8 @@ export class MatchmakingWorker {
           matchId,
           playerASocketId,
           playerBSocketId,
+          playerAUserId,
+          playerBUserId,
           questionsCount: questionsOnly.length,
           initialPlayerStatus,
         },
