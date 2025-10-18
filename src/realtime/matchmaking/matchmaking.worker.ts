@@ -42,6 +42,23 @@ export class MatchmakingWorker {
           const { clientId: clientId1, userId: userId1 } = player1;
           const { clientId: clientId2, userId: userId2 } = player2;
 
+          // Prevent matching a user with themselves
+          if (userId1 === userId2 || clientId1 === clientId2) {
+            LoggerUtil.logWarn(
+              this.logger,
+              'matchmaking-worker',
+              'Attempted to match user with themselves, removing duplicate from queue',
+              {
+                userId: userId1,
+                clientId1,
+                clientId2,
+              },
+            );
+            // Remove the duplicate entry
+            await redisClient.lrem(queueKey, 1, entry2);
+            continue; // Skip this iteration and check queue again
+          }
+
           // Remove them from the queue
           await redisClient.lrem(queueKey, 1, entry1);
           await redisClient.lrem(queueKey, 1, entry2);
@@ -66,13 +83,26 @@ export class MatchmakingWorker {
           const socket1 = this.gateway.server.sockets.sockets.get(clientId1);
           const socket2 = this.gateway.server.sockets.sockets.get(clientId2);
 
-          // Join both players to the match room if sockets are found
-          if (socket1) {
-            await this.roomsService.joinRoom(socket1, matchId);
+          // Ensure both players are still connected before creating match
+          if (!socket1 || !socket2) {
+            LoggerUtil.logWarn(
+              this.logger,
+              'matchmaking-worker',
+              'One or both players disconnected before match could be created',
+              {
+                clientId1,
+                clientId2,
+                socket1Connected: !!socket1,
+                socket2Connected: !!socket2,
+              },
+            );
+            // Don't create the match if either player is disconnected
+            continue;
           }
-          if (socket2) {
-            await this.roomsService.joinRoom(socket2, matchId);
-          }
+
+          // Join both players to the match room
+          await this.roomsService.joinRoom(socket1, matchId);
+          await this.roomsService.joinRoom(socket2, matchId);
 
           // Prepare questions for sending (without answers)
           const questionsForMatch = matchContent.questions.map((q: any) => ({

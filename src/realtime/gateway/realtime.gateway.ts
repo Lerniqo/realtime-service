@@ -156,10 +156,13 @@ export class RealtimeGateway
     }
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     this.connectionService.removeConnection(client);
     const userId =
       client.data.user?.userId || client.handshake.auth?.userId || 'unknown';
+
+    // Remove from matchmaking queues if present
+    await this.removeFromAllMatchmakingQueues(client.id, userId).catch(() => {});
 
     // Cleanup room state
     this.roomsService.removeSocketFromAllRooms(client.id).catch(() => {});
@@ -175,6 +178,46 @@ export class RealtimeGateway
           this.connectionService.getUserConnections(userId).length,
       },
     );
+  }
+
+  /**
+   * Remove a client from all matchmaking queues
+   */
+  private async removeFromAllMatchmakingQueues(
+    clientId: string,
+    userId: string,
+  ) {
+    try {
+      const redisClient = this.redisService.getClient();
+      const queueEntry = JSON.stringify({ clientId, userId });
+
+      // Remove from all game type queues
+      const queues = [
+        'matchmaking:queue:1v1_rapid_quiz',
+        // Add more queue types here as they are added
+      ];
+
+      for (const queueKey of queues) {
+        await redisClient.lrem(queueKey, 0, queueEntry); // Remove all occurrences
+      }
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        `Removed client from matchmaking queues on disconnect`,
+        {
+          clientId,
+          userId,
+        },
+      );
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeGateway',
+        'Error removing client from matchmaking queues',
+        error,
+      );
+    }
   }
 
   @SubscribeMessage('joinRoom')
@@ -234,6 +277,40 @@ export class RealtimeGateway
         this.logger,
         'RealtimeService',
         `Error adding client ${client.id} to matchmaking queue for ${payload.gameType}: ${error}`,
+        { error },
+      );
+    }
+  }
+
+  @SubscribeMessage('matchmaking:leave')
+  async onLeaveMatchmakingQueue(
+    client: Socket,
+    payload: { userId: string },
+  ) {
+    try {
+      const userId = payload.userId || client.data.user?.userId;
+      if (!userId) {
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeService',
+          `Cannot leave matchmaking queue: userId not provided`,
+          { clientId: client.id },
+        );
+        return;
+      }
+
+      await this.removeFromAllMatchmakingQueues(client.id, userId);
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeService',
+        `Client ${client.id} removed from matchmaking queues`,
+        { userId },
+      );
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeService',
+        `Error removing client ${client.id} from matchmaking queues`,
         { error },
       );
     }
