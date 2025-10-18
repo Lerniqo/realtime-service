@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { RealtimeGateway } from './gateway/realtime.gateway';
-import { AuthJwtModule } from '../auth/jwt.module';
 import { ConnectionService } from './gateway/connection.service';
 import { RealtimeRoomsService } from './rooms/rooms.service';
 import { RedisModule } from 'src/redis/redis.module';
@@ -10,6 +9,7 @@ import { MatchmakingService } from './matchmaking/matchmaking.service';
 import { MatchmakingWorker } from './matchmaking/matchmaking.worker';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ContentModule } from 'src/content/content.module';
+import { SecretCodeService } from 'src/auth/secret-code.service';
 
 /**
  * RealtimeModule
@@ -19,7 +19,6 @@ import { ContentModule } from 'src/content/content.module';
  */
 @Module({
   imports: [
-    AuthJwtModule,
     RedisModule,
     ScheduleModule.forRoot(),
     ContentModule,
@@ -32,6 +31,7 @@ import { ContentModule } from 'src/content/content.module';
     NotificationsService,
     MatchmakingService,
     MatchmakingWorker,
+    SecretCodeService,
   ],
   exports: [RealtimeRoomsService, NotificationsService, RealtimeGateway], // export if other modules need to emit to rooms or send notifications
 })

@@ -1,15 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { JwtService } from '@nestjs/jwt';
 import { RealtimeGateway } from './realtime.gateway';
 import { ConnectionService } from './connection.service';
 import { PinoLogger } from 'nestjs-pino';
 import { RealtimeRoomsService } from '../rooms/rooms.service';
 import { RedisService } from '../../redis/redis.service';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
+import { SecretCodeService } from 'src/auth/secret-code.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('RealtimeGateway', () => {
   let gateway: RealtimeGateway;
-  let jwtService: JwtService;
+  let secretCodeService: SecretCodeService;
   let roomsService: RealtimeRoomsService;
   let connectionService: ConnectionService;
   let matchmakingService: MatchmakingService;
@@ -32,9 +33,15 @@ describe('RealtimeGateway', () => {
       providers: [
         RealtimeGateway,
         {
-          provide: JwtService,
+          provide: SecretCodeService,
           useValue: {
-            verify: jest.fn(),
+            validateSessionCode: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue('test-secret-key'),
           },
         },
         {
@@ -98,7 +105,7 @@ describe('RealtimeGateway', () => {
     }).compile();
 
     gateway = module.get<RealtimeGateway>(RealtimeGateway);
-    jwtService = module.get<JwtService>(JwtService);
+    secretCodeService = module.get<SecretCodeService>(SecretCodeService);
     roomsService = module.get<RealtimeRoomsService>(RealtimeRoomsService);
     connectionService = module.get<ConnectionService>(ConnectionService);
     matchmakingService = module.get<MatchmakingService>(MatchmakingService);
@@ -121,18 +128,18 @@ describe('RealtimeGateway', () => {
     expect(gateway).toBeDefined();
   });
 
-  it('should handle valid JWT token on connection', async () => {
-    const mockPayload = {
-      sub: 'user123',
+  it('should handle valid session code on connection', async () => {
+    const mockUserData = {
+      userId: 'user123',
       role: 'user',
       email: 'test@example.com',
     };
 
-    jest.spyOn(jwtService, 'verify').mockReturnValue(mockPayload);
+    jest.spyOn(secretCodeService, 'validateSessionCode').mockReturnValue(mockUserData);
 
     await gateway.handleConnection(mockSocket as any);
 
-    expect(jwtService.verify).toHaveBeenCalledWith('test-token');
+    expect(secretCodeService.validateSessionCode).toHaveBeenCalledWith('test-token');
     expect(mockSocket.data.user).toEqual({
       userId: 'user123',
       role: 'user',
@@ -161,8 +168,8 @@ describe('RealtimeGateway', () => {
   });
 
   it('should reject connection with invalid token', async () => {
-    jest.spyOn(jwtService, 'verify').mockImplementation(() => {
-      throw new Error('Invalid token');
+    jest.spyOn(secretCodeService, 'validateSessionCode').mockImplementation(() => {
+      throw new Error('Invalid session code');
     });
 
     await gateway.handleConnection(mockSocket as any);

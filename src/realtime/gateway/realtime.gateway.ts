@@ -8,7 +8,6 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Injectable } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { ConnectionService } from './connection.service';
 import { LoggerUtil } from 'src/common/utils/logger.util';
 import { PinoLogger } from 'nestjs-pino';
@@ -18,6 +17,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { ConfigService } from '@nestjs/config';
+import { SecretCodeService } from 'src/auth/secret-code.service';
 
 @Injectable()
 @WebSocketGateway({
@@ -41,7 +41,7 @@ export class RealtimeGateway
   private subClient: Redis;
 
   constructor(
-    private jwtService: JwtService,
+    private secretCodeService: SecretCodeService,
     private connectionService: ConnectionService,
     private readonly logger: PinoLogger,
     private readonly roomsService: RealtimeRoomsService,
@@ -110,13 +110,14 @@ export class RealtimeGateway
         return;
       }
 
-      const payload = this.jwtService.verify(token);
+      // Validate session code using SecretCodeService
+      const userData = this.secretCodeService.validateSessionCode(token);
 
-      // To-Do.Have to look at what will be the things that will came with the token
+      // Set user data from the decoded session code
       client.data.user = {
-        userId: payload.sub || payload.userId,
-        role: payload.role,
-        email: payload.email,
+        userId: userData.userId,
+        role: userData.role,
+        email: userData.email,
       };
 
       // Add connection tracking if service exists
