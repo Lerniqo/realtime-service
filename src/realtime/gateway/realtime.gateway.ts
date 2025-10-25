@@ -77,13 +77,118 @@ export class RealtimeGateway
         { status: this.subClient.status },
       );
 
-      // For Socket.IO Redis adapter, we don't need to manually connect the duplicate
-      // The adapter will handle the connection
+      // Ensure pub/sub clients are connected and add error handlers so failures
+      // are visible (helps diagnose "WebSocket closed before the connection is established").
+      try {
+        // If the clients have a connect() method (ioredis), await it.
+        // If they are already connected, connect() will noop or resolve immediately.
+        if (typeof (pubClient as any).connect === 'function') {
+          await (pubClient as any).connect();
+        }
+      } catch (err) {
+        // Log but continue — adapter may still work depending on client state
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          'pubClient.connect() threw an error (continuing)',
+          { error: (err as Error).message },
+        );
+      }
+
+      try {
+        if (typeof (this.subClient as any).connect === 'function') {
+          await (this.subClient as any).connect();
+        }
+      } catch (err) {
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          'subClient.connect() threw an error (continuing)',
+          { error: (err as Error).message },
+        );
+      }
+
+      // Attach basic error/connect logs to both clients to make Redis-level problems visible
+      try {
+        pubClient.on?.('error', (e: any) =>
+          LoggerUtil.logError(
+            this.logger,
+            'RealtimeGateway',
+            'Redis pubClient error',
+            e,
+          ),
+        );
+        this.subClient.on?.('error', (e: any) =>
+          LoggerUtil.logError(
+            this.logger,
+            'RealtimeGateway',
+            'Redis subClient error',
+            e,
+          ),
+        );
+
+        pubClient.on?.('connect', () =>
+          LoggerUtil.logInfo(
+            this.logger,
+            'RealtimeGateway',
+            'Redis pubClient connected',
+            {},
+          ),
+        );
+        this.subClient.on?.('connect', () =>
+          LoggerUtil.logInfo(
+            this.logger,
+            'RealtimeGateway',
+            'Redis subClient connected',
+            {},
+          ),
+        );
+      } catch (err) {
+        // Non-fatal logging setup error
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          'Failed to attach Redis event handlers',
+          { error: (err as Error).message },
+        );
+      }
+
+      // Initialize the socket.io Redis adapter
       this.server.adapter(createAdapter(pubClient, this.subClient));
       LoggerUtil.logInfo(
         this.logger,
         'RealtimeGateway',
         'Redis adapter initialized successfully',
+      );
+
+      // Add server-level error logging to diagnose WebSocket handshake/upgrade failures
+      this.server.engine.on('connection_error', (err: any) => {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Socket.IO engine connection error',
+          {
+            error: err.message,
+            context: err.context,
+            type: err.type,
+            description: err.description,
+          },
+        );
+      });
+
+      this.server.on('connect_error', (err: any) => {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Socket.IO server connect error',
+          { error: err.message },
+        );
+      });
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        'Server-level error logging initialized',
       );
     } catch (error) {
       LoggerUtil.logError(
