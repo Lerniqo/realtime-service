@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { firstValueFrom, timeout, catchError } from 'rxjs';
+import { firstValueFrom, catchError } from 'rxjs';
+import { timeout } from 'rxjs/operators';
 import { PinoLogger } from 'nestjs-pino';
 import { LoggerUtil } from 'src/common/utils/logger.util';
 import { AiChatRequestDto, AiChatResponseDto } from './dto/chat-message.dto';
@@ -51,7 +52,7 @@ export class AiServiceClient {
         this.httpService
           .post<AiChatResponseDto>(`${this.aiServiceUrl}/llm/chat`, request)
           .pipe(
-            timeout(this.requestTimeout),
+            timeout({ each: this.requestTimeout }),
             catchError((error) => {
               LoggerUtil.logError(
                 this.logger,
@@ -118,7 +119,7 @@ export class AiServiceClient {
   async healthCheck(): Promise<boolean> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get(`${this.aiServiceUrl}/health`).pipe(timeout(5000)),
+        this.httpService.get(`${this.aiServiceUrl}/health`).pipe(timeout({ each: 5000 })),
       );
       return response.status === 200;
     } catch (error) {
