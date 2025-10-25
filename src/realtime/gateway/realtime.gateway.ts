@@ -486,7 +486,7 @@ export class RealtimeGateway
         // Send the AI response back to the specific student
         client.emit('chat:newMessage', {
           message: aiResponse.message,
-          sessionId: aiResponse.sessionId,
+          sessionId: payload.sessionId,
           metadata: aiResponse.metadata,
           timestamp: new Date().toISOString(),
         });
