@@ -1411,9 +1411,8 @@ describe('RealtimeGateway', () => {
 
         expect(aiServiceClient.sendChatMessage).toHaveBeenCalledWith({
           message: chatPayload.message,
-          userId: 'user123',
           sessionId: chatPayload.sessionId,
-          context: chatPayload.context,
+          detailed: false,
         });
 
         expect(mockAuthenticatedSocket.emit).toHaveBeenCalledWith(

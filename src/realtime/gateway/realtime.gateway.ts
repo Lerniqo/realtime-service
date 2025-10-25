@@ -374,9 +374,8 @@ export class RealtimeGateway
       try {
         const aiResponse = await this.aiServiceClient.sendChatMessage({
           message: payload.message,
-          userId,
           sessionId: payload.sessionId,
-          context: payload.context,
+          detailed: payload.detailed || false,
         });
 
         // Send the AI response back to the specific student

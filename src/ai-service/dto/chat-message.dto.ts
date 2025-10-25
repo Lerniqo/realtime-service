@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsString, IsOptional, IsObject } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsObject,
+  IsBoolean,
+} from 'class-validator';
 
 /**
  * DTO for incoming chat messages from students via WebSocket
@@ -15,6 +21,10 @@ export class SendChatMessageDto {
   @IsOptional()
   @IsObject()
   context?: Record<string, any>;
+
+  @IsOptional()
+  @IsBoolean()
+  detailed?: boolean;
 }
 
 /**
@@ -34,15 +44,11 @@ export class AiChatRequestDto {
   @IsString()
   message: string;
 
-  @IsNotEmpty()
-  @IsString()
-  userId: string;
-
   @IsOptional()
   @IsString()
   sessionId?: string;
 
   @IsOptional()
-  @IsObject()
-  context?: Record<string, any>;
+  @IsBoolean()
+  detailed: boolean;
 }

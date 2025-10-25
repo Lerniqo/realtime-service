@@ -41,15 +41,15 @@ export class AiServiceClient {
         'AiServiceClient',
         'Sending chat message to AI Service',
         {
-          userId: request.userId,
           sessionId: request.sessionId,
           messageLength: request.message.length,
+          detailed: request.detailed || false,
         },
       );
 
       const response = await firstValueFrom(
         this.httpService
-          .post<AiChatResponseDto>(`${this.aiServiceUrl}/api/ai/chat`, request)
+          .post<AiChatResponseDto>(`${this.aiServiceUrl}/llm/chat`, request)
           .pipe(
             timeout(this.requestTimeout),
             catchError((error) => {
@@ -71,7 +71,6 @@ export class AiServiceClient {
         'AiServiceClient',
         'Received response from AI Service',
         {
-          userId: request.userId,
           sessionId: request.sessionId,
           duration,
           responseLength: response.data.message?.length || 0,
@@ -88,7 +87,6 @@ export class AiServiceClient {
         'Failed to get response from AI Service',
         {
           error: error.message,
-          userId: request.userId,
           sessionId: request.sessionId,
           duration,
         },

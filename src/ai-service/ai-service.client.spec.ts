@@ -66,9 +66,8 @@ describe('AiServiceClient', () => {
   describe('sendChatMessage', () => {
     const mockRequest: AiChatRequestDto = {
       message: 'Hello, AI!',
-      userId: 'user123',
       sessionId: 'session456',
-      context: { topic: 'math' },
+      detailed: true,
     };
 
     const mockAiResponse = {
@@ -92,7 +91,7 @@ describe('AiServiceClient', () => {
 
       expect(result).toEqual(mockAiResponse);
       expect(mockHttpService.post).toHaveBeenCalledWith(
-        'http://localhost:3001/api/ai/chat',
+        'http://localhost:3001/llm/chat',
         mockRequest,
       );
     });
