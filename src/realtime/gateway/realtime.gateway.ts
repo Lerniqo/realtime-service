@@ -20,6 +20,8 @@ import Redis from 'ioredis';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { ConfigService } from '@nestjs/config';
 import { SecretCodeService } from 'src/auth/secret-code.service';
+import { AiServiceClient } from 'src/ai-service/ai-service.client';
+import { SendChatMessageDto } from 'src/ai-service/dto/chat-message.dto';
 
 @Injectable()
 @WebSocketGateway({
@@ -27,11 +29,10 @@ import { SecretCodeService } from 'src/auth/secret-code.service';
     origin: process.env.SOCKET_CORS_ORIGIN?.split(',') || '*',
     credentials: process.env.SOCKET_CORS_CREDENTIALS === 'true',
     methods: process.env.SOCKET_CORS_METHODS?.split(',') || ['GET', 'POST'],
-    allowedHeaders:
-      process.env.SOCKET_CORS_ALLOWED_HEADERS?.split(',') || [
-        'Content-Type',
-        'Authorization',
-      ],
+    allowedHeaders: process.env.SOCKET_CORS_ALLOWED_HEADERS?.split(',') || [
+      'Content-Type',
+      'Authorization',
+    ],
   },
 })
 export class RealtimeGateway
@@ -50,6 +51,7 @@ export class RealtimeGateway
     private readonly redisService: RedisService,
     private readonly matchmakingService: MatchmakingService,
     private readonly configService: ConfigService,
+    private readonly aiServiceClient: AiServiceClient,
   ) {}
 
   // ...existing code...
@@ -75,13 +77,118 @@ export class RealtimeGateway
         { status: this.subClient.status },
       );
 
-      // For Socket.IO Redis adapter, we don't need to manually connect the duplicate
-      // The adapter will handle the connection
+      // Ensure pub/sub clients are connected and add error handlers so failures
+      // are visible (helps diagnose "WebSocket closed before the connection is established").
+      try {
+        // If the clients have a connect() method (ioredis), await it.
+        // If they are already connected, connect() will noop or resolve immediately.
+        if (typeof (pubClient as any).connect === 'function') {
+          await (pubClient as any).connect();
+        }
+      } catch (err) {
+        // Log but continue — adapter may still work depending on client state
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          'pubClient.connect() threw an error (continuing)',
+          { error: (err as Error).message },
+        );
+      }
+
+      try {
+        if (typeof (this.subClient as any).connect === 'function') {
+          await (this.subClient as any).connect();
+        }
+      } catch (err) {
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          'subClient.connect() threw an error (continuing)',
+          { error: (err as Error).message },
+        );
+      }
+
+      // Attach basic error/connect logs to both clients to make Redis-level problems visible
+      try {
+        pubClient.on?.('error', (e: any) =>
+          LoggerUtil.logError(
+            this.logger,
+            'RealtimeGateway',
+            'Redis pubClient error',
+            e,
+          ),
+        );
+        this.subClient.on?.('error', (e: any) =>
+          LoggerUtil.logError(
+            this.logger,
+            'RealtimeGateway',
+            'Redis subClient error',
+            e,
+          ),
+        );
+
+        pubClient.on?.('connect', () =>
+          LoggerUtil.logInfo(
+            this.logger,
+            'RealtimeGateway',
+            'Redis pubClient connected',
+            {},
+          ),
+        );
+        this.subClient.on?.('connect', () =>
+          LoggerUtil.logInfo(
+            this.logger,
+            'RealtimeGateway',
+            'Redis subClient connected',
+            {},
+          ),
+        );
+      } catch (err) {
+        // Non-fatal logging setup error
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          'Failed to attach Redis event handlers',
+          { error: (err as Error).message },
+        );
+      }
+
+      // Initialize the socket.io Redis adapter
       this.server.adapter(createAdapter(pubClient, this.subClient));
       LoggerUtil.logInfo(
         this.logger,
         'RealtimeGateway',
         'Redis adapter initialized successfully',
+      );
+
+      // Add server-level error logging to diagnose WebSocket handshake/upgrade failures
+      this.server.engine.on('connection_error', (err: any) => {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Socket.IO engine connection error',
+          {
+            error: err.message,
+            context: err.context,
+            type: err.type,
+            description: err.description,
+          },
+        );
+      });
+
+      this.server.on('connect_error', (err: any) => {
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Socket.IO server connect error',
+          { error: err.message },
+        );
+      });
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        'Server-level error logging initialized',
       );
     } catch (error) {
       LoggerUtil.logError(
@@ -142,8 +249,6 @@ export class RealtimeGateway
           ).length,
         },
       );
-
-      const userId = client.handshake.auth?.userId || 'anonymous';
     } catch (error) {
       LoggerUtil.logError(
         this.logger,
@@ -162,7 +267,9 @@ export class RealtimeGateway
       client.data.user?.userId || client.handshake.auth?.userId || 'unknown';
 
     // Remove from matchmaking queues if present
-    await this.removeFromAllMatchmakingQueues(client.id, userId).catch(() => {});
+    await this.removeFromAllMatchmakingQueues(client.id, userId).catch(
+      () => {},
+    );
 
     // Cleanup room state
     this.roomsService.removeSocketFromAllRooms(client.id).catch(() => {});
@@ -283,10 +390,7 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('matchmaking:leave')
-  async onLeaveMatchmakingQueue(
-    client: Socket,
-    payload: { userId: string },
-  ) {
+  async onLeaveMatchmakingQueue(client: Socket, payload: { userId: string }) {
     try {
       const userId = payload.userId || client.data.user?.userId;
       if (!userId) {
@@ -316,6 +420,130 @@ export class RealtimeGateway
     }
   }
 
+  /**
+   * Handle incoming chat messages from authenticated students for AI Tutor
+   * @param client - The authenticated WebSocket client
+   * @param payload - The chat message payload
+   */
+  @SubscribeMessage('chat:sendMessage')
+  async onChatSendMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: SendChatMessageDto,
+  ) {
+    try {
+      // Ensure user is authenticated
+      if (!client.data.user?.userId) {
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          'Unauthenticated chat message attempt',
+          { clientId: client.id },
+        );
+        client.emit('chat:error', {
+          message: 'Authentication required',
+          code: 'AUTH_REQUIRED',
+        });
+        return;
+      }
+
+      const userId = client.data.user.userId;
+
+      // Validate payload
+      if (!payload?.message || typeof payload.message !== 'string') {
+        LoggerUtil.logWarn(
+          this.logger,
+          'RealtimeGateway',
+          'Invalid chat message payload',
+          { clientId: client.id, userId, payload },
+        );
+        client.emit('chat:error', {
+          message: 'Invalid message format',
+          code: 'INVALID_PAYLOAD',
+        });
+        return;
+      }
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'RealtimeGateway',
+        'Received chat message from student',
+        {
+          clientId: client.id,
+          userId,
+          messageLength: payload.message.length,
+          sessionId: payload.sessionId,
+        },
+      );
+
+      // Forward the message to AI Service
+      try {
+        const aiResponse = await this.aiServiceClient.sendChatMessage({
+          message: payload.message,
+          sessionId: payload.sessionId,
+          detailed: payload.detailed || false,
+        });
+
+        // Send the AI response back to the specific student
+        client.emit('chat:newMessage', {
+          message: aiResponse.message,
+          sessionId: payload.sessionId,
+          metadata: aiResponse.metadata,
+          timestamp: new Date().toISOString(),
+        });
+
+        LoggerUtil.logInfo(
+          this.logger,
+          'RealtimeGateway',
+          'AI response sent to student',
+          {
+            clientId: client.id,
+            userId,
+            sessionId: aiResponse.sessionId,
+            responseLength: aiResponse.message?.length || 0,
+          },
+        );
+      } catch (error) {
+        // Handle AI Service errors gracefully
+        LoggerUtil.logError(
+          this.logger,
+          'RealtimeGateway',
+          'Error getting response from AI Service',
+          {
+            error: error.message,
+            clientId: client.id,
+            userId,
+            sessionId: payload.sessionId,
+          },
+        );
+
+        // Send error notification to the client
+        client.emit('chat:error', {
+          message: 'Failed to get response from AI tutor. Please try again.',
+          code: 'AI_SERVICE_ERROR',
+          details: error.message,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      LoggerUtil.logError(
+        this.logger,
+        'RealtimeGateway',
+        'Unexpected error in chat:sendMessage handler',
+        {
+          error: error.message,
+          clientId: client.id,
+          userId: client.data.user?.userId,
+        },
+      );
+
+      client.emit('chat:error', {
+        message: 'An unexpected error occurred',
+        code: 'INTERNAL_ERROR',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
   @SubscribeMessage('match:submitAnswer')
   async onSubmitAnswer(
     @ConnectedSocket() client: Socket,
@@ -342,7 +570,9 @@ export class RealtimeGateway
       }
 
       // Resolve matchId: prefer payload.matchId, otherwise derive from client's rooms
-      let matchId: string | null = payload.matchId ? String(payload.matchId) : null;
+      let matchId: string | null = payload.matchId
+        ? String(payload.matchId)
+        : null;
       if (matchId && !matchId.startsWith('match:')) {
         matchId = `match:${matchId}`;
       }
@@ -352,7 +582,9 @@ export class RealtimeGateway
         const socketRooms = await this.roomsService.getSocketRooms(client.id);
 
         // Find the match room (room that starts with 'match:')
-        const matchRoom = socketRooms.find((room) => room?.startsWith('match:'));
+        const matchRoom = socketRooms.find((room) =>
+          room?.startsWith('match:'),
+        );
 
         if (!matchRoom) {
           LoggerUtil.logError(
@@ -373,8 +605,12 @@ export class RealtimeGateway
       }
 
       // Get player socket IDs from Redis
-      const playerASocketId = await redisClient.get(`${matchId}:playerASocketId`);
-      const playerBSocketId = await redisClient.get(`${matchId}:playerBSocketId`);
+      const playerASocketId = await redisClient.get(
+        `${matchId}:playerASocketId`,
+      );
+      const playerBSocketId = await redisClient.get(
+        `${matchId}:playerBSocketId`,
+      );
 
       let playerKey = '';
 
@@ -419,7 +655,9 @@ export class RealtimeGateway
       );
 
       // Get current player status from Redis
-      const playerStatusJson = await redisClient.get(`${matchId}:${playerKey}Status`);
+      const playerStatusJson = await redisClient.get(
+        `${matchId}:${playerKey}Status`,
+      );
       if (!playerStatusJson) {
         LoggerUtil.logError(
           this.logger,
@@ -493,7 +731,10 @@ export class RealtimeGateway
       const currentQuestion = questions[activeQuestionIndex];
 
       // If payload.questionId provided, validate it against the server's current question
-      if (typeof payload.questionId !== 'undefined' && String(payload.questionId) !== String(currentQuestion.id)) {
+      if (
+        typeof payload.questionId !== 'undefined' &&
+        String(payload.questionId) !== String(currentQuestion.id)
+      ) {
         LoggerUtil.logWarn(
           this.logger,
           'RealtimeGateway',
@@ -511,7 +752,8 @@ export class RealtimeGateway
       const correctAnswer = answers[String(currentQuestion.id)];
 
       // Check if answer is correct and update score safely
-      playerStatus.score = typeof playerStatus.score === 'number' ? playerStatus.score : 0;
+      playerStatus.score =
+        typeof playerStatus.score === 'number' ? playerStatus.score : 0;
       if (payload.answer === correctAnswer) {
         playerStatus.score += 1;
         LoggerUtil.logInfo(
@@ -551,14 +793,25 @@ export class RealtimeGateway
       playerStatus.activeQuestionIndex = activeQuestionIndex + 1;
 
       // Store updated player status back to Redis
-      await redisClient.set(`${matchId}:${playerKey}Status`, JSON.stringify(playerStatus));
+      await redisClient.set(
+        `${matchId}:${playerKey}Status`,
+        JSON.stringify(playerStatus),
+      );
 
       // Get both players' statuses for broadcasting
-      const playerAStatusJson = await redisClient.get(`${matchId}:playerAStatus`);
-      const playerBStatusJson = await redisClient.get(`${matchId}:playerBStatus`);
+      const playerAStatusJson = await redisClient.get(
+        `${matchId}:playerAStatus`,
+      );
+      const playerBStatusJson = await redisClient.get(
+        `${matchId}:playerBStatus`,
+      );
 
-      const playerAStatus = playerAStatusJson ? JSON.parse(playerAStatusJson) : null;
-      const playerBStatus = playerBStatusJson ? JSON.parse(playerBStatusJson) : null;
+      const playerAStatus = playerAStatusJson
+        ? JSON.parse(playerAStatusJson)
+        : null;
+      const playerBStatus = playerBStatusJson
+        ? JSON.parse(playerBStatusJson)
+        : null;
 
       // Determine next question
       const nextQuestionIndex = playerStatus.activeQuestionIndex;

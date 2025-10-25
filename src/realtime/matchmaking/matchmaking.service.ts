@@ -12,7 +12,7 @@ export class MatchmakingService {
     userId: string,
     gameType: string,
   ): Promise<void> {
-    if (gameType === GameType.ONE_V_ONE_RAPID_QUIZ) {
+    if (gameType === (GameType.ONE_V_ONE_RAPID_QUIZ as string)) {
       const redisClient = this.redisService.getClient();
       // Store both clientId and userId as a JSON object
       const queueEntry = JSON.stringify({ clientId, userId });

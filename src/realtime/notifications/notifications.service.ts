@@ -10,7 +10,7 @@ export class NotificationsService {
     private readonly logger: PinoLogger,
   ) {}
 
-  async sendToUsers(userIds: string[], payload: any) {
+  sendToUsers(userIds: string[], payload: any) {
     try {
       this.gateway.sendNotificationToUsers(userIds, payload);
       LoggerUtil.logInfo(this.logger, 'NotificationsService', 'sendToUsers', {
@@ -18,7 +18,12 @@ export class NotificationsService {
         payload,
       });
     } catch (error) {
-      LoggerUtil.logError(this.logger, 'NotificationsService', 'sendToUsers', error);
+      LoggerUtil.logError(
+        this.logger,
+        'NotificationsService',
+        'sendToUsers',
+        error,
+      );
     }
   }
 }

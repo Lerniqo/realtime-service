@@ -1,9 +1,8 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
-import { Logger } from 'nestjs-pino';
 import { PinoLogger } from 'nestjs-pino/PinoLogger';
-import { LoggerUtil } from 'src/common/utils/logger.util';
+import { LoggerUtil } from '../common/utils/logger.util';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {

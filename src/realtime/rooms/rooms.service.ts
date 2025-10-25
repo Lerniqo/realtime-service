@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Socket } from 'socket.io';
 import { RedisService } from 'src/redis/redis.service';
 import { InMemoryRoomStore } from './rooms.store';
@@ -111,7 +111,7 @@ export class RealtimeRoomsService {
   /**
    * Broadcast a message to a room (all instances via adapter)
    */
-  async emitToRoom(
+  emitToRoom(
     server: import('socket.io').Server,
     roomName: string,
     event: string,

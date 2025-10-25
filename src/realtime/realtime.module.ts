@@ -10,6 +10,7 @@ import { MatchmakingWorker } from './matchmaking/matchmaking.worker';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ContentModule } from 'src/content/content.module';
 import { SecretCodeService } from 'src/auth/secret-code.service';
+import { AiServiceModule } from 'src/ai-service/ai-service.module';
 
 /**
  * RealtimeModule
@@ -22,6 +23,7 @@ import { SecretCodeService } from 'src/auth/secret-code.service';
     RedisModule,
     ScheduleModule.forRoot(),
     ContentModule,
+    AiServiceModule,
   ],
   controllers: [InternalNotifyController],
   providers: [

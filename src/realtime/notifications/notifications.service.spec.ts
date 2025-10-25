@@ -194,10 +194,8 @@ describe('NotificationsService', () => {
         throw new Error('Gateway error');
       });
 
-      // Act & Assert
-      await expect(
-        service.sendToUsers(userIds, payload),
-      ).resolves.not.toThrow();
+      // Act & Assert - service.sendToUsers catches errors internally and doesn't throw
+      expect(() => service.sendToUsers(userIds, payload)).not.toThrow();
     });
   });
 });
