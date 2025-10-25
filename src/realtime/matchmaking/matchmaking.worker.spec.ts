@@ -13,6 +13,7 @@ jest.mock('src/common/utils/logger.util', () => ({
   LoggerUtil: {
     logInfo: jest.fn(),
     logError: jest.fn(),
+    logWarn: jest.fn(),
   },
 }));
 
@@ -20,11 +21,11 @@ import { LoggerUtil } from 'src/common/utils/logger.util';
 
 describe('MatchmakingWorker', () => {
   let worker: MatchmakingWorker;
-  let redisService: RedisService;
+  let _redisService: RedisService;
   let roomsService: RealtimeRoomsService;
   let gateway: RealtimeGateway;
   let logger: PinoLogger;
-  let contentService: ContentService;
+  let _contentService: ContentService;
   let mockRedisClient: any;
   let mockSocket1: Partial<Socket>;
   let mockSocket2: Partial<Socket>;
@@ -124,11 +125,11 @@ describe('MatchmakingWorker', () => {
     }).compile();
 
     worker = module.get<MatchmakingWorker>(MatchmakingWorker);
-    redisService = module.get<RedisService>(RedisService);
+    _redisService = module.get<RedisService>(RedisService);
     roomsService = module.get<RealtimeRoomsService>(RealtimeRoomsService);
     gateway = module.get<RealtimeGateway>(RealtimeGateway);
     logger = module.get<PinoLogger>(PinoLogger);
-    contentService = module.get<ContentService>(ContentService);
+    _contentService = module.get<ContentService>(ContentService);
   });
 
   afterEach(() => {
@@ -224,11 +225,9 @@ describe('MatchmakingWorker', () => {
 
       await worker.handleMatchmaking();
 
-      expect(roomsService.joinRoom).toHaveBeenCalledTimes(1);
-      expect(roomsService.joinRoom).toHaveBeenCalledWith(
-        mockSocket1,
-        expect.stringMatching(/^match:\d+-[a-z0-9]+$/),
-      );
+      // Should not create a match if one socket is missing
+      expect(roomsService.joinRoom).not.toHaveBeenCalled();
+      expect(LoggerUtil.logWarn).toHaveBeenCalled();
     });
 
     it('should generate unique match IDs', async () => {
@@ -373,21 +372,9 @@ describe('MatchmakingWorker', () => {
 
       await worker.handleMatchmaking();
 
-      expect(gateway.notifyMatchFound).toHaveBeenCalledTimes(1);
-      expect(gateway.notifyMatchFound).toHaveBeenCalledWith(
-        expect.stringMatching(/^match:\d+-[a-z0-9]+$/),
-        'nonexistent1',
-        'nonexistent2',
-        'user1',
-        'user2',
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: expect.any(Number),
-            question: expect.any(String),
-            options: expect.any(Array),
-          }),
-        ]),
-      );
+      // Should not call notifyMatchFound when both sockets are missing
+      expect(gateway.notifyMatchFound).not.toHaveBeenCalled();
+      expect(LoggerUtil.logWarn).toHaveBeenCalled();
     });
   });
 });

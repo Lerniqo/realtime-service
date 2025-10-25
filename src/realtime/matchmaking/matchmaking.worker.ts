@@ -177,24 +177,12 @@ export class MatchmakingWorker {
       );
 
       // Store player socket IDs
-      await redisClient.set(
-        `${matchId}:playerASocketId`,
-        playerASocketId,
-      );
-      await redisClient.set(
-        `${matchId}:playerBSocketId`,
-        playerBSocketId,
-      );
+      await redisClient.set(`${matchId}:playerASocketId`, playerASocketId);
+      await redisClient.set(`${matchId}:playerBSocketId`, playerBSocketId);
 
       // Store player user IDs for reference
-      await redisClient.set(
-        `${matchId}:playerAUserId`,
-        playerAUserId,
-      );
-      await redisClient.set(
-        `${matchId}:playerBUserId`,
-        playerBUserId,
-      );
+      await redisClient.set(`${matchId}:playerAUserId`, playerAUserId);
+      await redisClient.set(`${matchId}:playerBUserId`, playerBUserId);
 
       // Store player status data
       const initialPlayerStatus = {
