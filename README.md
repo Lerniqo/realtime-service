@@ -56,6 +56,33 @@ SOCKET_CORS_CREDENTIALS=true
 
 📖 See [SOCKET_CORS_GUIDE.md](./SOCKET_CORS_GUIDE.md) for detailed CORS configuration instructions.
 
+## Health Checks
+
+The service provides production-ready health check endpoints:
+
+- **`/health/liveness`** - Container liveness check (always returns 200 if app is running)
+- **`/health/readiness`** - Readiness check (verifies Kafka and Redis connections)
+- **`/health`** - General health check (same as readiness)
+
+### Docker Health Check
+The Dockerfile includes a built-in health check using the liveness endpoint:
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+  CMD curl -f http://localhost:3000/health/liveness || exit 1
+```
+
+### Testing Health Endpoints
+```bash
+# Run the health check test script
+$ ./test-health.sh
+
+# Or manually test
+$ curl http://localhost:3000/health/liveness
+$ curl http://localhost:3000/health/readiness
+```
+
+📖 See [HEALTH_CHECKS.md](./HEALTH_CHECKS.md) for detailed production deployment guide including Kubernetes and AWS configurations.
+
 ## Project setup
 
 ```bash

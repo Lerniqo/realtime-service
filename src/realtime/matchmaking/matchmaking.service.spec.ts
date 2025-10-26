@@ -6,7 +6,11 @@ import { GameType } from './dto/game-type.enum';
 describe('MatchmakingService', () => {
   let service: MatchmakingService;
   let redisService: RedisService;
-  let mockRedisClient: any;
+  let mockRedisClient: {
+    lpush: jest.Mock;
+    lrange: jest.Mock;
+    lrem: jest.Mock;
+  };
 
   beforeEach(async () => {
     // Create mock Redis client
@@ -19,7 +23,7 @@ describe('MatchmakingService', () => {
     // Create mock RedisService
     const mockRedisService = {
       getClient: jest.fn().mockReturnValue(mockRedisClient),
-    };
+    } as Partial<RedisService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

@@ -6,7 +6,7 @@ import { LoggerUtil } from 'src/common/utils/logger.util';
 import { PinoLogger } from 'nestjs-pino';
 import { GameType } from './dto/game-type.enum';
 import { RealtimeGateway } from '../gateway/realtime.gateway';
-import { ContentService } from 'src/content/content.service';
+import { AiServiceClient } from 'src/ai-service/ai-service.client';
 
 @Injectable()
 export class MatchmakingWorker {
@@ -15,7 +15,7 @@ export class MatchmakingWorker {
     private readonly roomsService: RealtimeRoomsService,
     private readonly logger: PinoLogger,
     private readonly gateway: RealtimeGateway,
-    private readonly contentService: ContentService,
+    private readonly aiServiceClient: AiServiceClient,
   ) {}
 
   @Cron('*/2 * * * * *') // Run every 2 seconds
@@ -66,8 +66,65 @@ export class MatchmakingWorker {
           // Generate unique match ID
           const matchId = `match:${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-          // Get questions from content service
-          const matchContent = await this.contentService.getMatchQuestions();
+          const topics = [
+            'Maths General Knowledge',
+            'O/L Geometry',
+            'O/L Algebra',
+            'O/L Statistics',
+            'O/L Trigonometry',
+            'O/L Graphs',
+            'O/L Probability',
+            'O/L Number Theory',
+            'O/L Basic Arithmetic',
+            'O/L Areas and Volumes',
+            'O/L Ratios and Proportions',
+            'O/L Functions',
+            'O/L Sequences and Series',
+            'O/L Coordinate Geometry',
+            'O/L Mensuration',
+            'O/L Sets and Venn Diagrams',
+            'O/L Logic and Reasoning',
+            'O/L Time and Work',
+            'O/L Speed, Distance, and Time',
+            'O/L Percentages and Interest',
+            'O/L Data Interpretation',
+          ];
+
+          //pick a random 3 topics and combine them
+          const selectedTopics: string[] = [];
+          while (selectedTopics.length < 3) {
+            const randomTopic =
+              topics[Math.floor(Math.random() * topics.length)];
+            if (!selectedTopics.includes(randomTopic)) {
+              selectedTopics.push(randomTopic);
+            }
+          }
+
+          // Get questions from AI service
+          const questions = await this.aiServiceClient.generateQuestions(
+            selectedTopics.join(', '),
+            5,
+            {
+              question_types: ['multiple_choice'],
+              difficulty: 'medium',
+            },
+          );
+
+          const questionList = questions.questions.map((q: any) => ({
+            id: q.question_id,
+            question: q.question_text,
+            options: q.options.map((opt: any) => opt.text),
+            concepts: q.concepts,
+          }));
+
+          const answerList = questions.questions.map((q: any) => {
+            return q.options.find((opt: any) => opt.is_correct).text;
+          });
+
+          const matchContent = {
+            questions: questionList,
+            answers: answerList,
+          };
 
           // Store match data in Redis
           await this.storeMatchDataInRedis(
@@ -160,6 +217,7 @@ export class MatchmakingWorker {
         id: q.id,
         question: q.question,
         options: q.options,
+        concepts: q.concepts,
       }));
       await redisClient.set(
         `${matchId}:questions`,
@@ -177,24 +235,12 @@ export class MatchmakingWorker {
       );
 
       // Store player socket IDs
-      await redisClient.set(
-        `${matchId}:playerASocketId`,
-        playerASocketId,
-      );
-      await redisClient.set(
-        `${matchId}:playerBSocketId`,
-        playerBSocketId,
-      );
+      await redisClient.set(`${matchId}:playerASocketId`, playerASocketId);
+      await redisClient.set(`${matchId}:playerBSocketId`, playerBSocketId);
 
       // Store player user IDs for reference
-      await redisClient.set(
-        `${matchId}:playerAUserId`,
-        playerAUserId,
-      );
-      await redisClient.set(
-        `${matchId}:playerBUserId`,
-        playerBUserId,
-      );
+      await redisClient.set(`${matchId}:playerAUserId`, playerAUserId);
+      await redisClient.set(`${matchId}:playerBUserId`, playerBUserId);
 
       // Store player status data
       const initialPlayerStatus = {

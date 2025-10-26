@@ -111,7 +111,7 @@ describe('RealtimeRoomsService', () => {
       }),
     } as any;
 
-    await service.emitToRoom(mockServer, 'test-room', 'test-event', {
+    service.emitToRoom(mockServer, 'test-room', 'test-event', {
       message: 'hello',
     });
 

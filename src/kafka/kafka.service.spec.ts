@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { KafkaService } from './kafka.service';
+import { KafkaClientService } from './kafka-client.service';
 import { RealtimeGateway } from 'src/realtime/gateway/realtime.gateway';
 import { PinoLogger } from 'nestjs-pino';
 import { LoggerUtil } from 'src/common/utils/logger.util';
@@ -8,6 +9,7 @@ describe('KafkaService', () => {
   let service: KafkaService;
   let mockRealtimeGateway: jest.Mocked<RealtimeGateway>;
   let mockLogger: jest.Mocked<PinoLogger>;
+  let mockKafkaClientService: jest.Mocked<KafkaClientService>;
 
   beforeEach(async () => {
     // Create mock objects
@@ -20,6 +22,13 @@ describe('KafkaService', () => {
       error: jest.fn(),
       warn: jest.fn(),
       debug: jest.fn(),
+    } as any;
+
+    mockKafkaClientService = {
+      sendMessage: jest.fn(),
+      sendBatchMessages: jest.fn(),
+      listTopics: jest.fn(),
+      createTopics: jest.fn(),
     } as any;
 
     // Spy on LoggerUtil static methods
@@ -36,6 +45,10 @@ describe('KafkaService', () => {
         {
           provide: PinoLogger,
           useValue: mockLogger,
+        },
+        {
+          provide: KafkaClientService,
+          useValue: mockKafkaClientService,
         },
       ],
     }).compile();

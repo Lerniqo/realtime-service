@@ -7,6 +7,8 @@ import { RedisService } from '../../redis/redis.service';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { SecretCodeService } from 'src/auth/secret-code.service';
 import { ConfigService } from '@nestjs/config';
+import { AiServiceClient } from 'src/ai-service/ai-service.client';
+import { KafkaService } from 'src/kafka/kafka.service';
 
 describe('RealtimeGateway', () => {
   let gateway: RealtimeGateway;
@@ -15,6 +17,8 @@ describe('RealtimeGateway', () => {
   let connectionService: ConnectionService;
   let matchmakingService: MatchmakingService;
   let redisService: RedisService;
+  let aiServiceClient: AiServiceClient;
+  let _kafkaService: KafkaService;
 
   const mockSocket = {
     id: 'test-socket-id',
@@ -101,6 +105,22 @@ describe('RealtimeGateway', () => {
             addToMatchingQueue: jest.fn(),
           },
         },
+        {
+          provide: AiServiceClient,
+          useValue: {
+            sendChatMessage: jest.fn(),
+            healthCheck: jest.fn(),
+          },
+        },
+        {
+          provide: KafkaService,
+          useValue: {
+            emit: jest.fn(),
+            send: jest.fn(),
+            publish: jest.fn(),
+            sendToTopic: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -110,6 +130,8 @@ describe('RealtimeGateway', () => {
     connectionService = module.get<ConnectionService>(ConnectionService);
     matchmakingService = module.get<MatchmakingService>(MatchmakingService);
     redisService = module.get<RedisService>(RedisService);
+    aiServiceClient = module.get<AiServiceClient>(AiServiceClient);
+    _kafkaService = module.get<KafkaService>(KafkaService);
 
     // Mock the server property
     gateway.server = {
@@ -135,11 +157,15 @@ describe('RealtimeGateway', () => {
       email: 'test@example.com',
     };
 
-    jest.spyOn(secretCodeService, 'validateSessionCode').mockReturnValue(mockUserData);
+    jest
+      .spyOn(secretCodeService, 'validateSessionCode')
+      .mockReturnValue(mockUserData);
 
     await gateway.handleConnection(mockSocket as any);
 
-    expect(secretCodeService.validateSessionCode).toHaveBeenCalledWith('test-token');
+    expect(secretCodeService.validateSessionCode).toHaveBeenCalledWith(
+      'test-token',
+    );
     expect(mockSocket.data.user).toEqual({
       userId: 'user123',
       role: 'user',
@@ -168,9 +194,11 @@ describe('RealtimeGateway', () => {
   });
 
   it('should reject connection with invalid token', async () => {
-    jest.spyOn(secretCodeService, 'validateSessionCode').mockImplementation(() => {
-      throw new Error('Invalid session code');
-    });
+    jest
+      .spyOn(secretCodeService, 'validateSessionCode')
+      .mockImplementation(() => {
+        throw new Error('Invalid session code');
+      });
 
     await gateway.handleConnection(mockSocket as any);
 
@@ -180,10 +208,13 @@ describe('RealtimeGateway', () => {
     expect(mockSocket.disconnect).toHaveBeenCalledWith(true);
   });
 
-  it('should handle disconnect properly', () => {
+  it('should handle disconnect properly', async () => {
     mockSocket.data.user = { userId: 'user123' };
 
-    gateway.handleDisconnect(mockSocket as any);
+    await gateway.handleDisconnect(mockSocket as any);
+
+    // Wait for async operations to complete
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(connectionService.removeConnection).toHaveBeenCalledWith(mockSocket);
     expect(roomsService.removeSocketFromAllRooms).toHaveBeenCalledWith(
@@ -495,12 +526,16 @@ describe('RealtimeGateway', () => {
       expect(mockEmit).toHaveBeenNthCalledWith(1, 'match:found', {
         matchId,
         questions: mockQuestions,
+        playerRole: 'playerA',
+        yourUserId: userAId,
         opponentClientId: clientBId,
         opponentUserId: userBId,
       });
       expect(mockEmit).toHaveBeenNthCalledWith(2, 'match:found', {
         matchId,
         questions: mockQuestions,
+        playerRole: 'playerB',
+        yourUserId: userBId,
         opponentClientId: clientAId,
         opponentUserId: userAId,
       });
@@ -698,6 +733,8 @@ describe('RealtimeGateway', () => {
       expect(mockEmitA).toHaveBeenCalledWith('match:found', {
         matchId,
         questions: mockQuestions,
+        playerRole: 'playerA',
+        yourUserId: userAId,
         opponentClientId: clientBId,
         opponentUserId: userBId,
       });
@@ -706,6 +743,8 @@ describe('RealtimeGateway', () => {
       expect(mockEmitB).toHaveBeenCalledWith('match:found', {
         matchId,
         questions: mockQuestions,
+        playerRole: 'playerB',
+        yourUserId: userBId,
         opponentClientId: clientAId,
         opponentUserId: userAId,
       });
@@ -744,6 +783,8 @@ describe('RealtimeGateway', () => {
       expect(mockEmitA).toHaveBeenCalledWith('match:found', {
         matchId,
         questions: mockQuestions,
+        playerRole: 'playerA',
+        yourUserId: userAId,
         opponentClientId: clientBId,
         opponentUserId: userBId,
       });
@@ -752,6 +793,8 @@ describe('RealtimeGateway', () => {
       expect(mockEmitB).toHaveBeenCalledWith('match:found', {
         matchId,
         questions: mockQuestions,
+        playerRole: 'playerB',
+        yourUserId: userBId,
         opponentClientId: clientAId,
         opponentUserId: userAId,
       });
@@ -835,11 +878,23 @@ describe('RealtimeGateway', () => {
           mockQuestions,
         );
 
+        // Check calls for both playerA and playerB
         expect(mockEmit).toHaveBeenCalledWith('match:found', {
           matchId: testMatchId,
           questions: mockQuestions,
-          opponentClientId: expect.any(String),
-          opponentUserId: expect.any(String),
+          playerRole: 'playerA',
+          yourUserId: userAId,
+          opponentClientId: clientBId,
+          opponentUserId: userBId,
+        });
+
+        expect(mockEmit).toHaveBeenCalledWith('match:found', {
+          matchId: testMatchId,
+          questions: mockQuestions,
+          playerRole: 'playerB',
+          yourUserId: userBId,
+          opponentClientId: clientAId,
+          opponentUserId: userAId,
         });
       });
 
@@ -1322,6 +1377,186 @@ describe('RealtimeGateway', () => {
           timer: 7, // Should be updated to payload timer
         }),
       );
+    });
+  });
+
+  describe('AI Tutor Chat Integration', () => {
+    const mockAuthenticatedSocket = {
+      id: 'test-socket-id',
+      data: {
+        user: {
+          userId: 'user123',
+          role: 'student',
+          email: 'student@example.com',
+        },
+      },
+      emit: jest.fn(),
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    describe('chat:sendMessage', () => {
+      it('should successfully handle a chat message and return AI response', async () => {
+        const chatPayload = {
+          message: 'Can you help me with calculus?',
+          sessionId: 'session123',
+          context: { topic: 'math' },
+        };
+
+        const aiResponse = {
+          message:
+            'Of course! What specific calculus topic would you like help with?',
+          sessionId: 'session123',
+          metadata: { confidence: 0.95 },
+        };
+
+        jest
+          .spyOn(aiServiceClient, 'sendChatMessage')
+          .mockResolvedValue(aiResponse);
+
+        await gateway.onChatSendMessage(
+          mockAuthenticatedSocket as any,
+          chatPayload,
+        );
+
+        expect(aiServiceClient.sendChatMessage).toHaveBeenCalledWith({
+          message: chatPayload.message,
+          sessionId: chatPayload.sessionId,
+          detailed: false,
+        });
+
+        expect(mockAuthenticatedSocket.emit).toHaveBeenCalledWith(
+          'chat:newMessage',
+          expect.objectContaining({
+            message: aiResponse.message,
+            sessionId: aiResponse.sessionId,
+            metadata: aiResponse.metadata,
+            timestamp: expect.any(String),
+          }),
+        );
+      });
+
+      it('should reject unauthenticated chat attempts', async () => {
+        const unauthenticatedSocket = {
+          id: 'test-socket-id',
+          data: {},
+          emit: jest.fn(),
+        };
+
+        const chatPayload = {
+          message: 'Hello',
+        };
+
+        await gateway.onChatSendMessage(
+          unauthenticatedSocket as any,
+          chatPayload,
+        );
+
+        expect(aiServiceClient.sendChatMessage).not.toHaveBeenCalled();
+        expect(unauthenticatedSocket.emit).toHaveBeenCalledWith(
+          'chat:error',
+          expect.objectContaining({
+            message: 'Authentication required',
+            code: 'AUTH_REQUIRED',
+          }),
+        );
+      });
+
+      it('should reject invalid message payloads', async () => {
+        const invalidPayload = {
+          message: '', // Empty message
+        };
+
+        await gateway.onChatSendMessage(
+          mockAuthenticatedSocket as any,
+          invalidPayload,
+        );
+
+        expect(aiServiceClient.sendChatMessage).not.toHaveBeenCalled();
+        expect(mockAuthenticatedSocket.emit).toHaveBeenCalledWith(
+          'chat:error',
+          expect.objectContaining({
+            message: 'Invalid message format',
+            code: 'INVALID_PAYLOAD',
+          }),
+        );
+      });
+
+      it('should handle AI Service errors gracefully', async () => {
+        const chatPayload = {
+          message: 'Test message',
+          sessionId: 'session123',
+        };
+
+        const aiError = new Error('AI Service timeout');
+        jest
+          .spyOn(aiServiceClient, 'sendChatMessage')
+          .mockRejectedValue(aiError);
+
+        await gateway.onChatSendMessage(
+          mockAuthenticatedSocket as any,
+          chatPayload,
+        );
+
+        expect(mockAuthenticatedSocket.emit).toHaveBeenCalledWith(
+          'chat:error',
+          expect.objectContaining({
+            message: 'Failed to get response from AI tutor. Please try again.',
+            code: 'AI_SERVICE_ERROR',
+            details: aiError.message,
+            timestamp: expect.any(String),
+          }),
+        );
+      });
+
+      it('should handle missing message field', async () => {
+        const invalidPayload = {} as any;
+
+        await gateway.onChatSendMessage(
+          mockAuthenticatedSocket as any,
+          invalidPayload,
+        );
+
+        expect(aiServiceClient.sendChatMessage).not.toHaveBeenCalled();
+        expect(mockAuthenticatedSocket.emit).toHaveBeenCalledWith(
+          'chat:error',
+          expect.objectContaining({
+            message: 'Invalid message format',
+            code: 'INVALID_PAYLOAD',
+          }),
+        );
+      });
+
+      it('should handle AI Service response with optional fields', async () => {
+        const chatPayload = {
+          message: 'Simple question',
+        };
+
+        const aiResponse = {
+          message: 'Simple answer',
+          sessionId: undefined,
+          metadata: undefined,
+        };
+
+        jest
+          .spyOn(aiServiceClient, 'sendChatMessage')
+          .mockResolvedValue(aiResponse);
+
+        await gateway.onChatSendMessage(
+          mockAuthenticatedSocket as any,
+          chatPayload,
+        );
+
+        expect(mockAuthenticatedSocket.emit).toHaveBeenCalledWith(
+          'chat:newMessage',
+          expect.objectContaining({
+            message: aiResponse.message,
+            timestamp: expect.any(String),
+          }),
+        );
+      });
     });
   });
 });

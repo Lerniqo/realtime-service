@@ -8,7 +8,7 @@ export class InternalAuthGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
-    const apiKey = req.headers['internal-api-key'];
+    const apiKey = req.headers['internal-api-key'] as string;
     const expectedKey = process.env.INTERNAL_API_KEY;
 
     const result = apiKey === expectedKey;
@@ -18,10 +18,10 @@ export class InternalAuthGuard implements CanActivate {
       const errorContext = {
         receivedApiKey: apiKey ? 'provided' : 'missing',
         expectedKeyExists: !!expectedKey,
-        requestPath: req.url,
-        requestMethod: req.method,
-        userAgent: req.headers['user-agent'],
-        ip: req.ip || req.connection?.remoteAddress,
+        requestPath: req.url as string,
+        requestMethod: req.method as string,
+        userAgent: req.headers['user-agent'] as string,
+        ip: (req.ip || req.connection?.remoteAddress) as string,
       };
 
       if (!apiKey) {
@@ -46,8 +46,8 @@ export class InternalAuthGuard implements CanActivate {
         'InternalAuthGuard',
         'Internal API authentication successful',
         {
-          requestPath: req.url,
-          requestMethod: req.method,
+          requestPath: req.url as string,
+          requestMethod: req.method as string,
         },
       );
     }

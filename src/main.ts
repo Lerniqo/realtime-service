@@ -8,16 +8,25 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // 1️⃣ Create a Kafka microservice
-  const kafkaMicroservice = app.connectMicroservice<MicroserviceOptions>({
+  const _kafkaMicroservice = app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.KAFKA,
     options: {
       client: {
         brokers: process.env.KAFKA_BROKERS?.split(',') ?? ['localhost:9092'], // Kafka broker URL
-        connectionTimeout: parseInt(process.env.KAFKA_CONNECTION_TIMEOUT || '30000', 10),
-        requestTimeout: parseInt(process.env.KAFKA_REQUEST_TIMEOUT || '30000', 10),
+        connectionTimeout: parseInt(
+          process.env.KAFKA_CONNECTION_TIMEOUT || '30000',
+          10,
+        ),
+        requestTimeout: parseInt(
+          process.env.KAFKA_REQUEST_TIMEOUT || '30000',
+          10,
+        ),
         retry: {
           retries: parseInt(process.env.KAFKA_RETRY_ATTEMPTS || '8', 10),
-          initialRetryTime: parseInt(process.env.KAFKA_RETRY_DELAY || '300', 10),
+          initialRetryTime: parseInt(
+            process.env.KAFKA_RETRY_DELAY || '300',
+            10,
+          ),
         },
       },
       consumer: {
@@ -58,4 +67,4 @@ async function bootstrap() {
   );
   logger.log('[Bootstrap] | Realtime Kafka microservice is running...');
 }
-bootstrap();
+void bootstrap();

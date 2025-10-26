@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { RealtimeGateway } from './gateway/realtime.gateway';
 import { ConnectionService } from './gateway/connection.service';
 import { RealtimeRoomsService } from './rooms/rooms.service';
@@ -10,6 +10,8 @@ import { MatchmakingWorker } from './matchmaking/matchmaking.worker';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ContentModule } from 'src/content/content.module';
 import { SecretCodeService } from 'src/auth/secret-code.service';
+import { AiServiceModule } from 'src/ai-service/ai-service.module';
+import { KafkaModule } from 'src/kafka/kafka.module';
 
 /**
  * RealtimeModule
@@ -22,6 +24,8 @@ import { SecretCodeService } from 'src/auth/secret-code.service';
     RedisModule,
     ScheduleModule.forRoot(),
     ContentModule,
+    AiServiceModule,
+    forwardRef(() => KafkaModule),
   ],
   controllers: [InternalNotifyController],
   providers: [
