@@ -9,7 +9,7 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { ConnectionService } from './connection.service';
 import { LoggerUtil } from 'src/common/utils/logger.util';
 import { PinoLogger } from 'nestjs-pino';
@@ -59,6 +59,7 @@ export class RealtimeGateway
     private readonly matchmakingService: MatchmakingService,
     private readonly configService: ConfigService,
     private readonly aiServiceClient: AiServiceClient,
+    @Inject(forwardRef(() => KafkaService))
     private readonly kafkaService: KafkaService,
   ) {}
 

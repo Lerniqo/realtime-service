@@ -9,8 +9,6 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { HealthModule } from './health/health.module';
 import { LoggerModule } from 'nestjs-pino';
 import { RedisModule } from './redis/redis.module';
-import { KafkaController } from './kafka/kafka.controller';
-import { KafkaService } from './kafka/kafka.service';
 import { KafkaModule } from './kafka/kafka.module';
 import { ContentModule } from './content/content.module';
 // RoomsService is re-exported via RealtimeModule; direct import removed
@@ -51,8 +49,8 @@ import { ContentModule } from './content/content.module';
     KafkaModule,
     ContentModule,
   ],
-  controllers: [AppController, KafkaController],
+  controllers: [AppController],
   // RoomsService now provided by RealtimeModule
-  providers: [AppService, RedisService, KafkaService],
+  providers: [AppService, RedisService],
 })
 export class AppModule {}

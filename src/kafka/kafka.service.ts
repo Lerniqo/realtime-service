@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { RealtimeGateway } from 'src/realtime/gateway/realtime.gateway';
 import { PinoLogger } from 'nestjs-pino';
 import { LoggerUtil } from 'src/common/utils/logger.util';
@@ -7,6 +7,7 @@ import { KafkaClientService } from './kafka-client.service';
 @Injectable()
 export class KafkaService {
   constructor(
+    @Inject(forwardRef(() => RealtimeGateway))
     private readonly realtimeGateway: RealtimeGateway,
     private readonly logger: PinoLogger,
     private readonly kafkaClientService: KafkaClientService,
