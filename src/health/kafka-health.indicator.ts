@@ -5,24 +5,26 @@ import {
   HealthCheckError,
 } from '@nestjs/terminus';
 import { KafkaClientService } from '../kafka/kafka-client.service';
-import { PinoLogger } from 'nestjs-pino';
 
 @Injectable()
 export class KafkaHealthIndicator extends HealthIndicator {
-  constructor(
-    private readonly kafkaClientService: KafkaClientService,
-    private readonly logger: PinoLogger,
-  ) {
+  constructor(private readonly kafkaClientService: KafkaClientService) {
     super();
   }
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     try {
       // Try to list topics as a health check
-      const topics = await this.kafkaClientService.listTopics();
-      const isHealthy = Array.isArray(topics);
+      const topics = await Promise.race([
+        this.kafkaClientService.listTopics(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Health check timeout')), 5000),
+        ),
+      ]) as string[];
 
-      const result = super.getStatus(key, isHealthy, {
+      const isHealthy = Array.isArray(topics) && topics.length >= 0;
+
+      const result = this.getStatus(key, isHealthy, {
         topicCount: topics.length,
         status: 'connected',
       });
@@ -33,10 +35,9 @@ export class KafkaHealthIndicator extends HealthIndicator {
 
       throw new HealthCheckError('Kafka health check failed', result);
     } catch (error) {
-      this.logger.error('Kafka health check failed', error);
-      const result = super.getStatus(key, false, {
+      const result = this.getStatus(key, false, {
         status: 'disconnected',
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw new HealthCheckError('Kafka health check failed', result);
     }

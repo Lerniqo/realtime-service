@@ -39,8 +39,10 @@ COPY --from=build /usr/src/app/dist ./dist
 
 EXPOSE 3000
 
-# Health check configuration
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+# Health check configuration for production
+# Using liveness endpoint which just checks if the app is running
+# Kubernetes/orchestrators should use /health/readiness for readiness checks
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+  CMD curl -f http://localhost:3000/health/liveness || exit 1
 
 CMD ["node", "dist/main"]
