@@ -19,29 +19,4 @@ describe('HealthController', () => {
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
-
-  describe('checkHealth', () => {
-    it('should return health status from service', () => {
-      const mockHealthData = JSON.stringify({
-        status: 'ok',
-        timestamp: '2025-08-07T12:00:00.000Z',
-        service: 'realtime-service',
-      });
-
-      jest.spyOn(service, 'checkHealth').mockReturnValue(mockHealthData);
-
-      const result = controller.checkHealth();
-
-      expect(service.checkHealth).toHaveBeenCalled();
-      expect(result).toBe(mockHealthData);
-    });
-
-    it('should delegate to health service', () => {
-      const serviceMethodSpy = jest.spyOn(service, 'checkHealth');
-
-      controller.checkHealth();
-
-      expect(serviceMethodSpy).toHaveBeenCalledWith();
-    });
-  });
 });

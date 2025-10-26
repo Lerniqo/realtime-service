@@ -15,12 +15,12 @@ export class KafkaHealthIndicator extends HealthIndicator {
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     try {
       // Try to list topics as a health check
-      const topics = await Promise.race([
+      const topics = (await Promise.race([
         this.kafkaClientService.listTopics(),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Health check timeout')), 5000),
         ),
-      ]) as string[];
+      ])) as string[];
 
       const isHealthy = Array.isArray(topics) && topics.length >= 0;
 
