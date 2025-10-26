@@ -29,6 +29,8 @@ RUN pnpm build
 # This is the final stage that will be used to create the production image.
 # It starts from the base image again to keep it clean and small.
 FROM base AS production
+# Install curl for health checks
+RUN apk add --no-cache curl
 # Copy package manifests and install only production dependencies
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
@@ -36,4 +38,9 @@ RUN pnpm install --prod --frozen-lockfile
 COPY --from=build /usr/src/app/dist ./dist
 
 EXPOSE 3000
+
+# Health check configuration
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
 CMD ["node", "dist/main"]
