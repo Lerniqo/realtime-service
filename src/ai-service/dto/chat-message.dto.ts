@@ -4,6 +4,10 @@ import {
   IsOptional,
   IsObject,
   IsBoolean,
+  IsNumber,
+  IsArray,
+  Min,
+  Max,
 } from 'class-validator';
 
 /**
@@ -51,4 +55,50 @@ export class AiChatRequestDto {
   @IsOptional()
   @IsBoolean()
   detailed: boolean;
+}
+
+/**
+ * DTO for question generation request to AI Service
+ */
+export class AiQuestionGenerationDto {
+  @IsNotEmpty()
+  @IsString()
+  topic: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  num_questions?: number = 5;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  question_types?: string[];
+
+  @IsOptional()
+  @IsString()
+  difficulty?: string = 'medium';
+
+  @IsOptional()
+  @IsString()
+  creativity_mode?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.0)
+  @Max(1.0)
+  temperature?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  top_k?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.0)
+  @Max(1.0)
+  top_p?: number;
 }

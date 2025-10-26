@@ -7,6 +7,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { GameType } from './dto/game-type.enum';
 import { Socket } from 'socket.io';
 import { ContentService } from 'src/content/content.service';
+import { AiServiceClient } from 'src/ai-service/ai-service.client';
 
 // Mock LoggerUtil to capture the calls
 jest.mock('src/common/utils/logger.util', () => ({
@@ -29,6 +30,7 @@ describe('MatchmakingWorker', () => {
   let mockRedisClient: any;
   let mockSocket1: Partial<Socket>;
   let mockSocket2: Partial<Socket>;
+  let module: TestingModule;
 
   beforeEach(async () => {
     // Clear all mocks before each test
@@ -98,7 +100,7 @@ describe('MatchmakingWorker', () => {
       error: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         MatchmakingWorker,
         {
@@ -121,6 +123,28 @@ describe('MatchmakingWorker', () => {
           provide: ContentService,
           useValue: mockContentService,
         },
+        {
+          provide: AiServiceClient,
+          useValue: {
+            sendChatMessage: jest.fn(),
+            healthCheck: jest.fn(),
+            generateQuestions: jest.fn().mockResolvedValue({
+              questions: [
+                {
+                  question_id: 1,
+                  question_text: 'What is 2+2?',
+                  options: [
+                    { text: '3', is_correct: false },
+                    { text: '4', is_correct: true },
+                    { text: '5', is_correct: false },
+                    { text: '6', is_correct: false },
+                  ],
+                  concepts: ['arithmetic'],
+                },
+              ],
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -132,9 +156,15 @@ describe('MatchmakingWorker', () => {
     _contentService = module.get<ContentService>(ContentService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Clear all mocks after each test
     jest.clearAllMocks();
+    // Restore any spies on global objects
+    jest.restoreAllMocks();
+    // Close the testing module to free resources
+    if (module) {
+      await module.close();
+    }
   });
 
   it('should be defined', () => {
@@ -237,8 +267,13 @@ describe('MatchmakingWorker', () => {
         JSON.stringify({ clientId: 'client2', userId: 'user2' }),
       ]);
 
-      // Mock the random number generation to be predictable
-      jest.spyOn(Math, 'random').mockReturnValue(0.123456789);
+      // Mock Math.random to return different values for topic selection and match ID
+      let callCount = 0;
+      jest.spyOn(Math, 'random').mockImplementation(() => {
+        // Return different values to ensure different topics are selected
+        const values = [0.1, 0.3, 0.5, 0.7, 0.123456789];
+        return values[callCount++ % values.length];
+      });
       jest.spyOn(Date, 'now').mockReturnValue(1000);
 
       await worker.handleMatchmaking();
@@ -251,9 +286,6 @@ describe('MatchmakingWorker', () => {
 
       // Both sockets should join the same room
       expect(calls[0][1]).toBe(calls[1][1]);
-
-      // Restore mocks
-      jest.restoreAllMocks();
     });
 
     it('should log match creation with correct details', async () => {

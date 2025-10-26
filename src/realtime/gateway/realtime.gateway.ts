@@ -22,6 +22,13 @@ import { ConfigService } from '@nestjs/config';
 import { SecretCodeService } from 'src/auth/secret-code.service';
 import { AiServiceClient } from 'src/ai-service/ai-service.client';
 import { SendChatMessageDto } from 'src/ai-service/dto/chat-message.dto';
+import { KafkaService } from 'src/kafka/kafka.service';
+import {
+  UserData,
+  PlayerStatus,
+  MatchAnswers,
+  GameQuestions,
+} from '../types/socket.types';
 
 @Injectable()
 @WebSocketGateway({
@@ -52,6 +59,7 @@ export class RealtimeGateway
     private readonly matchmakingService: MatchmakingService,
     private readonly configService: ConfigService,
     private readonly aiServiceClient: AiServiceClient,
+    private readonly kafkaService: KafkaService,
   ) {}
 
   // ...existing code...
@@ -61,7 +69,7 @@ export class RealtimeGateway
       // Wait for Redis to be ready
       await this.redisService.waitUntilReady();
 
-      const pubClient = this.redisService.getClient();
+      const pubClient: Redis = this.redisService.getClient();
       LoggerUtil.logInfo(
         this.logger,
         'RealtimeGateway',
@@ -82,8 +90,8 @@ export class RealtimeGateway
       try {
         // If the clients have a connect() method (ioredis), await it.
         // If they are already connected, connect() will noop or resolve immediately.
-        if (typeof (pubClient as any).connect === 'function') {
-          await (pubClient as any).connect();
+        if (typeof pubClient.connect === 'function') {
+          await pubClient.connect();
         }
       } catch (err) {
         // Log but continue — adapter may still work depending on client state
@@ -96,8 +104,8 @@ export class RealtimeGateway
       }
 
       try {
-        if (typeof (this.subClient as any).connect === 'function') {
-          await (this.subClient as any).connect();
+        if (typeof this.subClient.connect === 'function') {
+          await this.subClient.connect();
         }
       } catch (err) {
         LoggerUtil.logWarn(
@@ -110,7 +118,7 @@ export class RealtimeGateway
 
       // Attach basic error/connect logs to both clients to make Redis-level problems visible
       try {
-        pubClient.on?.('error', (e: any) =>
+        pubClient.on?.('error', (e: Error) =>
           LoggerUtil.logError(
             this.logger,
             'RealtimeGateway',
@@ -118,7 +126,7 @@ export class RealtimeGateway
             e,
           ),
         );
-        this.subClient.on?.('error', (e: any) =>
+        this.subClient.on?.('error', (e: Error) =>
           LoggerUtil.logError(
             this.logger,
             'RealtimeGateway',
@@ -162,21 +170,30 @@ export class RealtimeGateway
       );
 
       // Add server-level error logging to diagnose WebSocket handshake/upgrade failures
-      this.server.engine.on('connection_error', (err: any) => {
-        LoggerUtil.logError(
-          this.logger,
-          'RealtimeGateway',
-          'Socket.IO engine connection error',
-          {
-            error: err.message,
-            context: err.context,
-            type: err.type,
-            description: err.description,
+      this.server.engine.on(
+        'connection_error',
+        (
+          err: Error & {
+            context?: unknown;
+            type?: string;
+            description?: string;
           },
-        );
-      });
+        ) => {
+          LoggerUtil.logError(
+            this.logger,
+            'RealtimeGateway',
+            'Socket.IO engine connection error',
+            {
+              error: err.message,
+              context: err.context,
+              type: err.type,
+              description: err.description,
+            },
+          );
+        },
+      );
 
-      this.server.on('connect_error', (err: any) => {
+      this.server.on('connect_error', (err: Error) => {
         LoggerUtil.logError(
           this.logger,
           'RealtimeGateway',
@@ -223,11 +240,12 @@ export class RealtimeGateway
       const userData = this.secretCodeService.validateSessionCode(token);
 
       // Set user data from the decoded session code
-      client.data.user = {
+      const user: UserData = {
         userId: userData.userId,
         role: userData.role,
         email: userData.email,
       };
+      client.data.user = user;
 
       // Add connection tracking if service exists
       if (this.connectionService) {
@@ -243,9 +261,9 @@ export class RealtimeGateway
         'Client authenticated and connected',
         {
           client_id: client.id,
-          user_id: client.data.user.userId,
+          user_id: client.data.user?.userId,
           total_user_connections: this.connectionService.getUserConnections(
-            client.data.user.userId,
+            client.data.user?.userId || '',
           ).length,
         },
       );
@@ -264,7 +282,9 @@ export class RealtimeGateway
   async handleDisconnect(client: Socket) {
     this.connectionService.removeConnection(client);
     const userId =
-      client.data.user?.userId || client.handshake.auth?.userId || 'unknown';
+      client.data.user?.userId ||
+      (client.handshake.auth as { userId?: string })?.userId ||
+      'unknown';
 
     // Remove from matchmaking queues if present
     await this.removeFromAllMatchmakingQueues(client.id, userId).catch(
@@ -295,7 +315,7 @@ export class RealtimeGateway
     userId: string,
   ) {
     try {
-      const redisClient = this.redisService.getClient();
+      const redisClient: Redis = this.redisService.getClient();
       const queueEntry = JSON.stringify({ clientId, userId });
 
       // Remove from all game type queues
@@ -350,12 +370,12 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('broadcastToRoom')
-  async onBroadcast(
+  onBroadcast(
     client: Socket,
-    data: { room: string; event: string; payload: any },
+    data: { room: string; event: string; payload: unknown },
   ) {
     if (!data?.room || !data?.event) return;
-    await this.roomsService.emitToRoom(
+    this.roomsService.emitToRoom(
       this.server,
       data.room,
       data.event,
@@ -509,7 +529,7 @@ export class RealtimeGateway
           'RealtimeGateway',
           'Error getting response from AI Service',
           {
-            error: error.message,
+            error: (error as Error).message,
             clientId: client.id,
             userId,
             sessionId: payload.sessionId,
@@ -520,7 +540,7 @@ export class RealtimeGateway
         client.emit('chat:error', {
           message: 'Failed to get response from AI tutor. Please try again.',
           code: 'AI_SERVICE_ERROR',
-          details: error.message,
+          details: (error as Error).message,
           timestamp: new Date().toISOString(),
         });
       }
@@ -530,7 +550,7 @@ export class RealtimeGateway
         'RealtimeGateway',
         'Unexpected error in chat:sendMessage handler',
         {
-          error: error.message,
+          error: (error as Error).message,
           clientId: client.id,
           userId: client.data.user?.userId,
         },
@@ -556,7 +576,7 @@ export class RealtimeGateway
     },
   ) {
     try {
-      const redisClient = this.redisService.getClient();
+      const redisClient: Redis = this.redisService.getClient();
 
       // Basic payload validation
       if (!payload || typeof payload.answer === 'undefined') {
@@ -672,7 +692,7 @@ export class RealtimeGateway
         return;
       }
 
-      const playerStatus = JSON.parse(playerStatusJson);
+      const playerStatus = JSON.parse(playerStatusJson) as PlayerStatus;
 
       // Update timer if provided
       if (typeof payload.timer === 'number') {
@@ -694,7 +714,7 @@ export class RealtimeGateway
         return;
       }
 
-      const answers = JSON.parse(answersJson);
+      const answers = JSON.parse(answersJson) as MatchAnswers;
       const activeQuestionIndex = playerStatus.activeQuestionIndex ?? 0;
 
       // Get questions to find the correct question ID
@@ -712,7 +732,7 @@ export class RealtimeGateway
         return;
       }
 
-      const questions = JSON.parse(questionsJson);
+      const questions = JSON.parse(questionsJson) as GameQuestions;
       if (activeQuestionIndex >= questions.length) {
         LoggerUtil.logError(
           this.logger,
@@ -749,13 +769,23 @@ export class RealtimeGateway
         );
       }
 
-      const correctAnswer = answers[String(currentQuestion.id)];
+      const correctAnswer = answers[String(currentQuestion.id || '')];
 
       // Check if answer is correct and update score safely
       playerStatus.score =
         typeof playerStatus.score === 'number' ? playerStatus.score : 0;
       if (payload.answer === correctAnswer) {
         playerStatus.score += 1;
+
+        void this.kafkaService.sendToTopic('dualmatch:question', {
+          userId: client.data.user?.userId,
+          isCorrect: true,
+          questionId: currentQuestion.id || '',
+          timestamp: Date.now(),
+          answer: payload.answer,
+          concept: currentQuestion.concepts || [],
+        });
+
         LoggerUtil.logInfo(
           this.logger,
           'RealtimeGateway',
@@ -772,6 +802,15 @@ export class RealtimeGateway
           },
         );
       } else {
+        void this.kafkaService.sendToTopic('dualmatch:question', {
+          userId: client.data.user?.userId,
+          isCorrect: false,
+          questionId: currentQuestion.id || '',
+          timestamp: Date.now(),
+          answer: payload.answer,
+          concept: currentQuestion.concepts || [],
+        });
+
         LoggerUtil.logInfo(
           this.logger,
           'RealtimeGateway',
@@ -807,10 +846,10 @@ export class RealtimeGateway
       );
 
       const playerAStatus = playerAStatusJson
-        ? JSON.parse(playerAStatusJson)
+        ? (JSON.parse(playerAStatusJson) as PlayerStatus)
         : null;
       const playerBStatus = playerBStatusJson
-        ? JSON.parse(playerBStatusJson)
+        ? (JSON.parse(playerBStatusJson) as PlayerStatus)
         : null;
 
       // Determine next question
@@ -878,7 +917,7 @@ export class RealtimeGateway
   /**
    * Send a notification to a specific user's private room
    */
-  sendNotification(userId: string, payload: any) {
+  sendNotification(userId: string, payload: unknown) {
     this.server.to(`user:${userId}`).emit('notification:new', payload);
     LoggerUtil.logInfo(
       this.logger,
@@ -891,7 +930,7 @@ export class RealtimeGateway
   /**
    * Send notifications to multiple users
    */
-  sendNotificationToUsers(userIds: string[], payload: any) {
+  sendNotificationToUsers(userIds: string[], payload: unknown) {
     userIds.forEach((userId) => {
       this.sendNotification(userId, payload);
     });

@@ -47,7 +47,7 @@ export class RealtimeRoomsService {
     const socketId = socket.id;
 
     // 1. Join Socket.IO internal room (works with redis-adapter)
-    socket.join(roomName);
+    void socket.join(roomName);
 
     // 2. Persist in Redis
     await client
@@ -70,7 +70,7 @@ export class RealtimeRoomsService {
     const client = this.redisService.getClient();
     const socketId = socket.id;
 
-    socket.leave(roomName);
+    void socket.leave(roomName);
 
     await client
       .multi()

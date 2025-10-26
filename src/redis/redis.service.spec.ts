@@ -16,14 +16,14 @@ describe('RedisService', () => {
             get: jest
               .fn()
               .mockImplementation((key: string, defaultValue?: any) => {
-                const config = {
+                const config: Record<string, any> = {
                   REDIS_HOST: process.env.REDIS_HOST || 'localhost',
                   REDIS_PORT: process.env.REDIS_PORT
                     ? parseInt(process.env.REDIS_PORT)
                     : 6379,
                   REDIS_PASSWORD: process.env.REDIS_PASSWORD,
                 };
-                return config[key] || defaultValue;
+                return config[key] ?? defaultValue;
               }),
           },
         },

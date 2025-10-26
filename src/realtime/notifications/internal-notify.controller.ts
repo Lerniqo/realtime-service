@@ -10,7 +10,7 @@ export class InternalNotifyController {
   @Post('notify')
   @UseGuards(InternalAuthGuard) // Protects this endpoint
   @HttpCode(202)
-  async notify(@Body() body: NotifyDto) {
+  notify(@Body() body: NotifyDto) {
     this.notificationsService.sendToUsers(body.userIds, body.payload);
     return { status: 'queued' };
   }

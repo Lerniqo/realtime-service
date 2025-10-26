@@ -22,7 +22,7 @@ export class NotificationsService {
         this.logger,
         'NotificationsService',
         'sendToUsers',
-        error,
+        error as Error,
       );
     }
   }

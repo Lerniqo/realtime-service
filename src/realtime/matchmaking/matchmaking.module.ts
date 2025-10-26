@@ -3,10 +3,10 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { MatchmakingWorker } from './matchmaking.worker';
 import { RedisModule } from 'src/redis/redis.module';
 import { RealtimeRoomsService } from '../rooms/rooms.service';
-import { ContentModule } from 'src/content/content.module';
+import { AiServiceModule } from 'src/ai-service/ai-service.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), RedisModule, ContentModule],
+  imports: [ScheduleModule.forRoot(), RedisModule, AiServiceModule],
   providers: [MatchmakingWorker, RealtimeRoomsService],
   exports: [MatchmakingWorker],
 })

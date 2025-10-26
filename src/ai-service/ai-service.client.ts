@@ -5,7 +5,11 @@ import { firstValueFrom, catchError } from 'rxjs';
 import { timeout } from 'rxjs/operators';
 import { PinoLogger } from 'nestjs-pino';
 import { LoggerUtil } from 'src/common/utils/logger.util';
-import { AiChatRequestDto, AiChatResponseDto } from './dto/chat-message.dto';
+import {
+  AiChatRequestDto,
+  AiChatResponseDto,
+  AiQuestionGenerationDto,
+} from './dto/chat-message.dto';
 
 @Injectable()
 export class AiServiceClient {
@@ -113,13 +117,126 @@ export class AiServiceClient {
   }
 
   /**
+   * Generate questions using the AI Service
+   * @param topic - The topic to generate questions about
+   * @param numberOfQuestions - The number of questions to generate
+   * @param options - Additional options for question generation
+   * @returns Promise with generated questions
+   * @throws Error if the request fails or times out
+   */
+  async generateQuestions(
+    topic: string,
+    numberOfQuestions: number = 5,
+    options?: {
+      question_types?: string[];
+      difficulty?: string;
+      creativity_mode?: string;
+      temperature?: number;
+      top_k?: number;
+      top_p?: number;
+    },
+  ): Promise<any> {
+    const startTime = Date.now();
+
+    try {
+      const request: AiQuestionGenerationDto = {
+        topic,
+        num_questions: numberOfQuestions,
+        difficulty: options?.difficulty || 'medium',
+        question_types: options?.question_types || ['multiple_choice'],
+        creativity_mode: options?.creativity_mode,
+        temperature: options?.temperature,
+        top_k: options?.top_k,
+        top_p: options?.top_p,
+      };
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'AiServiceClient',
+        'Generating questions with AI Service',
+        {
+          topic,
+          numberOfQuestions,
+          difficulty: request.difficulty,
+          questionTypes: request.question_types,
+        },
+      );
+
+      const response = await firstValueFrom(
+        this.httpService
+          .post<any>(`${this.aiServiceUrl}/questions/generate`, request)
+          .pipe(
+            timeout({ each: this.requestTimeout }),
+            catchError((error) => {
+              LoggerUtil.logError(
+                this.logger,
+                'AiServiceClient',
+                'Error generating questions from AI Service',
+                error,
+              );
+              throw error;
+            }),
+          ),
+      );
+
+      const duration = Date.now() - startTime;
+
+      LoggerUtil.logInfo(
+        this.logger,
+        'AiServiceClient',
+        'Successfully generated questions from AI Service',
+        {
+          topic,
+          questionsGenerated: response.data?.questions?.length || 0,
+          duration,
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      LoggerUtil.logError(
+        this.logger,
+        'AiServiceClient',
+        'Failed to generate questions from AI Service',
+        {
+          error: error.message,
+          topic,
+          numberOfQuestions,
+          duration,
+        },
+      );
+
+      // Re-throw with a more descriptive error
+      if (error.name === 'TimeoutError') {
+        throw new Error(
+          `Question generation request timed out after ${this.requestTimeout}ms`,
+        );
+      }
+
+      if (error.response) {
+        throw new Error(
+          `AI Service returned error: ${error.response.status} - ${error.response.statusText}`,
+        );
+      }
+
+      throw new Error(
+        `Failed to generate questions from AI Service: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Health check for the AI Service
    * @returns Promise<boolean> - true if the service is healthy
    */
   async healthCheck(): Promise<boolean> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get(`${this.aiServiceUrl}/health`).pipe(timeout({ each: 5000 })),
+        this.httpService
+          .get(`${this.aiServiceUrl}/health`)
+          .pipe(timeout({ each: 5000 })),
       );
       return response.status === 200;
     } catch (error) {

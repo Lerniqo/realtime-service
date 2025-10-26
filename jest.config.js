@@ -15,4 +15,6 @@ module.exports = {
   },
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts'],
   coverageDirectory: 'coverage',
+  maxWorkers: 1,
+  workerIdleMemoryLimit: '512MB',
 };

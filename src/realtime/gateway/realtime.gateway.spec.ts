@@ -8,6 +8,7 @@ import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { SecretCodeService } from 'src/auth/secret-code.service';
 import { ConfigService } from '@nestjs/config';
 import { AiServiceClient } from 'src/ai-service/ai-service.client';
+import { KafkaService } from 'src/kafka/kafka.service';
 
 describe('RealtimeGateway', () => {
   let gateway: RealtimeGateway;
@@ -17,6 +18,7 @@ describe('RealtimeGateway', () => {
   let matchmakingService: MatchmakingService;
   let redisService: RedisService;
   let aiServiceClient: AiServiceClient;
+  let _kafkaService: KafkaService;
 
   const mockSocket = {
     id: 'test-socket-id',
@@ -110,6 +112,15 @@ describe('RealtimeGateway', () => {
             healthCheck: jest.fn(),
           },
         },
+        {
+          provide: KafkaService,
+          useValue: {
+            emit: jest.fn(),
+            send: jest.fn(),
+            publish: jest.fn(),
+            sendToTopic: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -120,6 +131,7 @@ describe('RealtimeGateway', () => {
     matchmakingService = module.get<MatchmakingService>(MatchmakingService);
     redisService = module.get<RedisService>(RedisService);
     aiServiceClient = module.get<AiServiceClient>(AiServiceClient);
+    _kafkaService = module.get<KafkaService>(KafkaService);
 
     // Mock the server property
     gateway.server = {

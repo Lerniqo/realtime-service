@@ -21,6 +21,7 @@ describe('InternalAuthGuard', () => {
     process.env.INTERNAL_API_KEY = VALID_API_KEY;
 
     // Create mock logger
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     mockLogger = {
       info: jest.fn(),
       warn: jest.fn(),
@@ -40,6 +41,7 @@ describe('InternalAuthGuard', () => {
     };
 
     // Create mock execution context
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     mockExecutionContext = {
       switchToHttp: jest.fn().mockReturnValue({
         getRequest: jest.fn().mockReturnValue(mockRequest),

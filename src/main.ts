@@ -67,4 +67,4 @@ async function bootstrap() {
   );
   logger.log('[Bootstrap] | Realtime Kafka microservice is running...');
 }
-bootstrap();
+void bootstrap();
